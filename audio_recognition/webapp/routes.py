@@ -99,12 +99,10 @@ def in_library():
     tracks = payload.get("tracks") or []
     if not plex.configured():
         return jsonify({"configured": False, "found": {}})
-    found = {}
-    for t in tracks[:60]:
-        tid = t.get("id")
-        if tid is None:
-            continue
-        found[str(tid)] = plex.in_library(t.get("artist", ""), t.get("title", ""))
+    rows = [t for t in tracks[:60] if t.get("id") is not None]
+    present = plex.presence_batch([(t.get("artist", ""), t.get("title", "")) for t in rows])
+    found = {str(t["id"]): present.get((t.get("artist", ""), t.get("title", "")), False)
+             for t in rows}
     return jsonify({"configured": True, "found": found})
 
 
@@ -269,17 +267,14 @@ def healthz():
 @bp.route("/api/wantlist")
 def wantlist():
     """Distinct recognized tracks that Plex does NOT have -- an acquisition list.
-    Checks the most-played tracks first; find_track is cached, so repeat loads
-    are cheap even though the first pass hits Plex once per track."""
+    All the Plex checks run concurrently and are cached, so it scales to large
+    libraries without a per-track network stall."""
     if not plex.configured():
         return jsonify({"configured": False, "tracks": []})
-    out = []
-    for r in store.get_distinct_tracks(cap=600):
-        if not plex.in_library(r["artist"], r["title"]):
-            out.append(r)
-            if len(out) >= 200:
-                break
-    return jsonify({"configured": True, "tracks": out})
+    rows = store.get_distinct_tracks(cap=600)
+    present = plex.presence_batch([(r["artist"], r["title"]) for r in rows])
+    out = [r for r in rows if not present.get((r["artist"], r["title"]), False)]
+    return jsonify({"configured": True, "tracks": out[:200]})
 
 
 # --- correction ----------------------------------------------------------

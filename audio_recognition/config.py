@@ -134,10 +134,10 @@ PLEX_MUSIC_TYPE = 10  # Plex metadata type id for "track"
 PLEX_VERIFY_SSL = _env_bool("AR_PLEX_VERIFY_SSL", True)
 # Explicit music library name. Leave unset to auto-pick the first music section.
 PLEX_MUSIC_SECTION = os.getenv("AR_PLEX_MUSIC_SECTION")
-# The want-list checks hundreds of tracks against Plex; rather than one network
-# search each, the whole music library is indexed once and reused for this many
-# seconds. Lower it if your library changes often and you want fresher answers.
-PLEX_INDEX_TTL = _env_int("AR_PLEX_INDEX_TTL", 600)
+# The want-list checks hundreds of your recognized tracks against Plex. Each is
+# a fast indexed title search server-side, but they're run concurrently so the
+# page loads in seconds rather than minutes. Raise/lower to taste.
+PLEX_CONCURRENCY = _env_int("AR_PLEX_CONCURRENCY", 12)
 # When False (the default), generated playlists point at this app's /stream/<id>
 # proxy instead of embedding X-Plex-Token in a file you hand to other people.
 PLAYLIST_EMBED_TOKEN = _env_bool("AR_PLAYLIST_EMBED_TOKEN", False)

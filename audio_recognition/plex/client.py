@@ -1,28 +1,31 @@
 """Resolve recognized (artist, title) pairs to real tracks in a Plex library,
-using the maintained python-plexapi client rather than hand-rolled HTTP.
+using the maintained python-plexapi client.
+
+Designed to scale to very large libraries (100k+ tracks): it never bulk-fetches
+the library. Instead it looks up only the tracks you've actually recognized --
+each a fast, server-side indexed title search -- and runs the want-list's
+hundreds of lookups concurrently, caching results per process.
 
 Public surface (unchanged for callers):
     configured()                       -> bool
-    in_library(artist, title)          -> bool           # existence
-    find_track(artist, title)          -> dict | None     # streamable match
+    in_library(artist, title)          -> bool
+    presence_batch(pairs)              -> {(artist,title): bool}
+    find_track(artist, title)          -> dict | None       # streamable match
     open_stream(part_key, range)       -> requests.Response
     create_or_append_playlist(name, rating_keys) -> dict
 
-Run it directly to see exactly what your server returns for a track -- the
-fastest way to tell a connection problem from a matching problem:
-
+Diagnostic:
     python -m audio_recognition.plex.client "Pink Floyd" "Signs of Life"
 """
 import logging
 import re
-import threading
-import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 from ..config import (
-    PLEX_BASE_URL, PLEX_INDEX_TTL, PLEX_MUSIC_SECTION, PLEX_TIMEOUT, PLEX_TOKEN,
+    PLEX_BASE_URL, PLEX_CONCURRENCY, PLEX_MUSIC_SECTION, PLEX_TIMEOUT, PLEX_TOKEN,
     PLEX_VERIFY_SSL,
 )
 
@@ -32,9 +35,6 @@ _cache: dict[tuple[str, str], dict | None] = {}
 _server = None
 _section = None
 _connect_tried = False
-_index: dict[str, set] | None = None      # norm(title) -> {norm(artist), ...}
-_index_at = 0.0
-_index_lock = threading.Lock()
 
 
 def configured() -> bool:
@@ -88,7 +88,7 @@ def connect():
         _server = PlexServer(_base_url(), PLEX_TOKEN, session=_session(),
                              timeout=int(PLEX_TIMEOUT))
     except Exception as e:
-        log.warning("Plex connect failed (%s): %s", PLEX_BASE_URL, e)
+        log.warning("Plex connect failed (%s): %s", _base_url(), e)
         _server = None
         return None, None
     try:
@@ -119,7 +119,6 @@ def _search(section, title: str):
                 return hits
         except Exception as e:
             log.debug("Plex track search variant failed: %s", e)
-    # Last resort: the server-wide hub search, filtered to tracks.
     try:
         return [h for h in _server.search(q, mediatype="track")]
     except Exception as e:
@@ -195,52 +194,30 @@ def find_track(artist: str, title: str) -> dict | None:
     return m if m and m.get("part_key") else None
 
 
-def _build_index(section) -> dict:
-    """One bulk fetch of the whole music library -> {norm(title): {norm(artist)}}."""
-    idx: dict[str, set] = {}
-    for tr in section.searchTracks():   # all tracks in the section, one query
-        t = _norm(getattr(tr, "title", ""))
-        if not t:
-            continue
-        idx.setdefault(t, set()).add(_norm(getattr(tr, "grandparentTitle", "")))
-    return idx
-
-
-def library_index() -> dict | None:
-    """The title->artists index, (re)built at most every PLEX_INDEX_TTL seconds.
-    Returns None if Plex can't be reached (callers then fall back to live search)."""
-    global _index, _index_at
-    if not configured():
-        return None
-    with _index_lock:
-        if _index is not None and (time.time() - _index_at) < PLEX_INDEX_TTL:
-            return _index
-        _srv, section = connect()
-        if section is None:
-            return None
-        try:
-            _index = _build_index(section)
-            _index_at = time.time()
-            log.info("Plex library indexed: %d distinct titles.", len(_index))
-        except Exception as e:
-            log.warning("Plex index build failed: %s", e)
-            return None
-    return _index
-
-
 def in_library(artist: str, title: str) -> bool:
-    """Whether the library has this track at all. Answered from the bulk index
-    (fast, for the want-list's hundreds of checks); falls back to a live search
-    only if the index couldn't be built."""
-    idx = library_index()
-    if idx is None:
-        return _match(artist, title) is not None
-    want_title, want_artist = _norm(title), _norm(artist)
-    arts = idx.get(want_title)
-    if not arts:
-        return False
-    return (not want_artist) or any(
-        want_artist == a or want_artist in a or a in want_artist for a in arts)
+    """Whether the library has this track at all, streamable or not."""
+    return _match(artist, title) is not None
+
+
+def presence_batch(pairs: list) -> dict:
+    """Check many (artist, title) pairs at once, concurrently. Returns
+    {(artist, title): bool}. Used by the want-list and the in-library badge so a
+    few hundred lookups take seconds, not minutes -- results are cached, so a
+    second call is instant."""
+    pairs = list(pairs)
+    if not configured() or not pairs:
+        return {p: False for p in pairs}
+    connect()  # establish the shared connection once before fanning out
+    workers = max(1, min(PLEX_CONCURRENCY, len(pairs)))
+
+    def _one(p):
+        return p, (_match(p[0], p[1]) is not None)
+
+    out: dict = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for p, present in ex.map(_one, pairs):
+            out[p] = present
+    return out
 
 
 def open_stream(part_key: str, range_header: str | None = None) -> requests.Response:
@@ -291,10 +268,9 @@ def create_or_append_playlist(title: str, rating_keys: list) -> dict:
 
 
 if __name__ == "__main__":
-    # Diagnostic: python -m audio_recognition.plex.client "Artist" "Title"
     import sys
     logging.basicConfig(level=logging.DEBUG)
-    print(f"configured: {configured()}  base_url: {PLEX_BASE_URL!r}  "
+    print(f"configured: {configured()}  base_url: {_base_url()!r}  "
           f"verify_ssl: {PLEX_VERIFY_SSL}")
     srv, sec = connect()
     if srv is None:
@@ -307,8 +283,6 @@ if __name__ == "__main__":
         allsecs = f"<error: {e}>"
     print(f"connected. sections: {allsecs}")
     print(f"music section in use: {sec.title if sec else None}")
-    idx = library_index()
-    print(f"library index: {len(idx) if idx is not None else 'unavailable'} distinct titles")
     if len(sys.argv) >= 3:
         artist, title = sys.argv[1], sys.argv[2]
         print(f"\nsearching for: {artist!r} - {title!r}")
