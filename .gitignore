@@ -11,7 +11,9 @@ venv/
 # Local config & secrets
 .env
 *.env
+**/.env
 !.env.example
+!**/.env.example
 
 # Runtime state
 *.log

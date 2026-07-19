@@ -1,9 +1,34 @@
-"""Configuration. All secrets come from the environment -- no defaults.
+"""Configuration. All secrets come from the environment.
 
-Load a .env file before importing this module if you use one
-(e.g. `python-dotenv`, or a systemd EnvironmentFile=).
+A .env file is auto-discovered and loaded at import: AR_ENV_FILE if set, else a
+.env next to the app (its directory or the current working dir). Values already
+in the environment (e.g. from a systemd EnvironmentFile=) are NOT overridden, so
+this is safe to layer on top of any existing setup. The resolved path is also
+what the /config editor writes to.
 """
 import os
+
+
+def _discover_env() -> str | None:
+    explicit = os.getenv("AR_ENV_FILE")
+    if explicit:
+        return explicit
+    here = os.path.dirname(os.path.abspath(__file__))          # .../audio_recognition
+    app_dir = os.path.dirname(here)                            # the app's directory
+    for cand in (os.path.join(app_dir, ".env"),
+                 os.path.join(os.getcwd(), ".env")):
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+_ENV_PATH = _discover_env()
+if _ENV_PATH and os.path.exists(_ENV_PATH):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_ENV_PATH, override=False)   # env already set wins
+    except ImportError:
+        pass  # python-dotenv not installed; rely on the ambient environment
 
 
 def _env_int(name: str, default: int) -> int:
@@ -204,7 +229,7 @@ WEB_SESSION_HOURS = _env_int("AR_WEB_SESSION_HOURS", 720)
 # the SAME .env the app loads at startup, and you should run behind a login
 # (AR_WEB_PASSWORD_HASH). Edits require an app restart to take effect.
 CONFIG_EDIT_ENABLED = _env_bool("AR_CONFIG_EDIT", False)
-ENV_FILE = os.getenv("AR_ENV_FILE")
+ENV_FILE = os.getenv("AR_ENV_FILE") or _ENV_PATH
 
 
 # --- scrobbling (optional) ----------------------------------------------
