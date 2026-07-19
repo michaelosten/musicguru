@@ -389,3 +389,22 @@ select, .btn {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* Date-range filter row (Tracks/History) */
+.daterow {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 2px 2px; margin-bottom: 6px;
+}
+.daterow .when {
+  font-family: var(--legend); letter-spacing: .1em; text-transform: uppercase;
+  font-size: 10px; color: var(--ink-dim); margin-right: 2px;
+}
+.daterow .when-sep { color: var(--ink-faint); }
+.daterow .btn.day { padding: 3px 10px; font-size: 11px; }
+.daterow .btn.day.on { background: var(--lamp); color: #1a1305; border-color: var(--lamp); font-weight: 700; }
+.daterow input[type=date] {
+  background: var(--deep); border: 1px solid var(--hairline); border-radius: 2px;
+  color: var(--ink); font-family: var(--meter); font-size: 12px; padding: 3px 6px;
+  color-scheme: dark;
+}
+.daterow .when-active { color: var(--lamp); font-family: var(--meter); font-size: 12px; margin-left: 4px; }

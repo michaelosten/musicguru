@@ -65,7 +65,7 @@ def _local_offset_minutes() -> int:
     return int(off.total_seconds() // 60) if off else 0
 
 
-def _filters(q, genre, date_from, date_to):
+def _filters(q, genre, date_from, date_to, after=None, before=None):
     where, params = [], []
     if q:
         like = f"%{q}%"
@@ -80,6 +80,14 @@ def _filters(q, genre, date_from, date_to):
     if date_to:
         where.append("recognized_at < %s + INTERVAL 1 DAY")
         params.append(date_to)
+    # after/before are precise half-open UTC datetime bounds (used by the
+    # Today/Yesterday/range quick filters, computed in the browser's local tz).
+    if after:
+        where.append("recognized_at >= %s")
+        params.append(after)
+    if before:
+        where.append("recognized_at < %s")
+        params.append(before)
     return ("WHERE " + " AND ".join(where)) if where else "", params
 
 
@@ -520,8 +528,9 @@ def has_cover_blob(cover_key: str) -> bool:
 # --- reads ---------------------------------------------------------------
 
 def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
-                merge_variants=False, date_from=None, date_to=None) -> list[dict]:
-    where, params = _filters(q, genre, date_from, date_to)
+                merge_variants=False, date_from=None, date_to=None,
+                after=None, before=None) -> list[dict]:
+    where, params = _filters(q, genre, date_from, date_to, after, before)
     order = SORTS.get(sort, SORTS["recent"])
     group = f"{_BASE_TITLE}, artist" if merge_variants else "title, artist"
 
@@ -549,7 +558,7 @@ def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
     except mysql.connector.Error as e:
         if merge_variants:
             log.warning("merge_variants needs MySQL 8 (REGEXP_REPLACE): %s", e)
-            return get_archive(offset, limit, q, genre, sort, False, date_from, date_to)
+            return get_archive(offset, limit, q, genre, sort, False, date_from, date_to, after, before)
         log.error("get_archive error: %s", e)
         return []
 
@@ -559,9 +568,10 @@ def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
     return rows
 
 
-def get_matching_ids(q=None, genre=None, date_from=None, date_to=None, cap=500) -> list[int]:
+def get_matching_ids(q=None, genre=None, date_from=None, date_to=None,
+                     after=None, before=None, cap=500) -> list[int]:
     """Ids for 'select all matching' -- one representative play per track."""
-    where, params = _filters(q, genre, date_from, date_to)
+    where, params = _filters(q, genre, date_from, date_to, after, before)
     try:
         with _cursor() as (_c, cur):
             cur.execute(
@@ -575,9 +585,10 @@ def get_matching_ids(q=None, genre=None, date_from=None, date_to=None, cap=500) 
         return []
 
 
-def get_history(offset=0, limit=50, q=None, genre=None, date_from=None, date_to=None) -> list[dict]:
+def get_history(offset=0, limit=50, q=None, genre=None, date_from=None, date_to=None,
+                after=None, before=None) -> list[dict]:
     """Ungrouped, chronological. Answers 'what was on Saturday at 9pm'."""
-    where, params = _filters(q, genre, date_from, date_to)
+    where, params = _filters(q, genre, date_from, date_to, after, before)
     try:
         with _cursor(dictionary=True) as (_c, cur):
             cur.execute(

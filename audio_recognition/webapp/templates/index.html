@@ -61,6 +61,20 @@
       <button class="btn" id="mergeBtn" title="Merge remasters and live versions into one row">Merge variants</button>
     </div>
 
+    <div class="daterow" id="daterow">
+      <span class="when">When</span>
+      <button class="btn day on" data-range="all">All</button>
+      <button class="btn day" data-range="today">Today</button>
+      <button class="btn day" data-range="yesterday">Yesterday</button>
+      <button class="btn day" data-range="7d">Last 7 days</button>
+      <span class="when-sep">·</span>
+      <input type="date" id="dFrom" title="From (inclusive)" />
+      <span class="when-sep">–</span>
+      <input type="date" id="dTo" title="To (inclusive)" />
+      <button class="btn" id="dApply">Apply range</button>
+      <span class="when-active" id="dActive"></span>
+    </div>
+
     <div class="selbar" id="selbar" hidden>
       <span><span class="n" id="selCount">0</span> selected</span>
       <span class="spacer" style="flex:1"></span>
@@ -223,6 +237,7 @@
 
   // ── state ──────────────────────────────────────────────────────────────
   let view = "tracks", offset = 0, loading = false, done = false, merge = false;
+  let range = {};               // { after, before } as UTC 'YYYY-MM-DD HH:MM:SS'
   const selected = new Map();   // id -> {title, artist}
   const trivia = new Map();
 
@@ -230,8 +245,26 @@
     const p = new URLSearchParams();
     if ($("q").value.trim()) p.set("q", $("q").value.trim());
     if ($("genre").value)    p.set("genre", $("genre").value);
+    if (range.after)  p.set("after", range.after);
+    if (range.before) p.set("before", range.before);
     return p;
   };
+
+  // Local-day boundaries -> UTC datetime strings the server compares against
+  // recognized_at (which is stored in UTC).
+  const utcStr = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+  const localMidnight = (offsetDays) => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offsetDays);
+    return d;
+  };
+  function setRange(startD, endD, label, activeBtn) {
+    range = startD ? { after: utcStr(startD), before: utcStr(endD) } : {};
+    document.querySelectorAll(".day").forEach((b) => b.classList.remove("on"));
+    if (activeBtn) activeBtn.classList.add("on");
+    $("dActive").textContent = label || "";
+    selected.clear(); paintSel();
+    reset();
+  }
 
   function reset() {
     offset = 0; done = false;
@@ -678,6 +711,7 @@
       view = tab.dataset.view;
       $("sort").hidden = view !== "tracks";
       $("mergeBtn").hidden = view !== "tracks";
+      $("daterow").hidden = view === "stats" || view === "wantlist";
       $("list").dataset.lastDay = "";
       paintSel();
       if (view === "stats") { $("list").innerHTML = ""; $("msg").hidden = true; loadStats(); }
@@ -697,6 +731,27 @@
     merge = !merge;
     $("mergeBtn").classList.toggle("primary", merge);
     reset();
+  });
+
+  document.querySelectorAll(".day").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $("dFrom").value = ""; $("dTo").value = "";
+      const r = btn.dataset.range;
+      if (r === "all") setRange(null, null, "", btn);
+      else if (r === "today") setRange(localMidnight(0), localMidnight(1), "Today", btn);
+      else if (r === "yesterday") setRange(localMidnight(-1), localMidnight(0), "Yesterday", btn);
+      else if (r === "7d") setRange(localMidnight(-6), localMidnight(1), "Last 7 days", btn);
+    });
+  });
+  $("dApply").addEventListener("click", () => {
+    const f = $("dFrom").value, t = $("dTo").value;
+    if (!f && !t) return;
+    // date inputs are local calendar days; make an inclusive [f 00:00, t+1 00:00) window
+    const start = f ? new Date(f + "T00:00:00") : new Date(-8640000000000000);
+    const endBase = t ? new Date(t + "T00:00:00") : new Date();
+    const end = new Date(endBase); end.setDate(end.getDate() + 1);
+    const label = (f || "…") + " – " + (t || "…");
+    setRange(start, end, label, null);
   });
 
   $("clearSel").addEventListener("click", () => {

@@ -49,6 +49,8 @@ def _common_filters():
         "genre": _str_arg("genre"),
         "date_from": _str_arg("from", 10),
         "date_to": _str_arg("to", 10),
+        "after": _str_arg("after", 25),
+        "before": _str_arg("before", 25),
     }
 
 
