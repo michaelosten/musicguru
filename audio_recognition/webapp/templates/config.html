@@ -31,6 +31,13 @@
     .flash { padding: 10px 12px; border-radius: 2px; margin-bottom: 16px; font-size: 14px; }
     .flash.ok { border: 1px solid var(--signal); color: var(--signal); }
     .flash.bad { border: 1px solid var(--alert); color: var(--alert); }
+    .fld { display: flex; align-items: center; gap: 12px; padding: 7px 0; }
+    .fld label { min-width: 200px; color: var(--ink-dim); font-size: 13px; }
+    .fld input[type=text], .fld input[type=password] { flex: 1; max-width: 420px; padding: 7px 10px; background: var(--deep); border: 1px solid var(--hairline); border-radius: 2px; color: var(--ink); font-family: var(--meter); font-size: 13px; }
+    .fld input:focus { outline: none; border-color: var(--lamp); }
+    .sect { font-family: var(--legend); letter-spacing: .06em; text-transform: uppercase; font-size: 11px; color: var(--lamp); margin: 18px 0 6px; }
+    button.save { margin-top: 18px; padding: 9px 18px; cursor: pointer; background: var(--lamp); color: #1a1305; border: 0; border-radius: 2px; font-family: var(--legend); letter-spacing: .1em; text-transform: uppercase; font-weight: 700; font-size: 12px; }
+    button.save:hover { filter: brightness(1.07); }
   </style>
 </head>
 <body>
@@ -40,6 +47,35 @@
   <p class="sub">Integration status and setup. Secrets are set via <code>AR_*</code> environment variables, never here.</p>
 
   <div id="flash"></div>
+
+  {% if editable %}
+  <h2>Edit configuration</h2>
+  <p class="sub">Writes to <code>{{ env_file }}</code>. Secrets are write-only — leave a secret blank to keep its current value. <strong>Changes take effect after an app restart.</strong></p>
+  {% if not auth_on %}
+  <div class="flash bad">No login is configured — anyone who can reach this console can read and change these settings. Set <code>AR_WEB_PASSWORD_HASH</code> and restart.</div>
+  {% endif %}
+  <form method="post" action="/config/save" id="cfgForm">
+    {% for section, items in sections.items() %}
+      <div class="sect">{{ section }}</div>
+      {% for it in items %}
+      <div class="fld">
+        <label for="{{ it.key }}">{{ it.label }}</label>
+        {% if it.kind == 'bool' %}
+          <input type="checkbox" id="{{ it.key }}" name="{{ it.key }}" {% if it.checked %}checked{% endif %} />
+        {% elif it.kind == 'secret' %}
+          <input type="password" id="{{ it.key }}" name="{{ it.key }}" autocomplete="new-password"
+                 placeholder="{{ 'set — blank keeps current' if it.is_set else 'not set' }}" />
+        {% else %}
+          <input type="text" id="{{ it.key }}" name="{{ it.key }}" value="{{ it.value }}" />
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% endfor %}
+    <button class="save" type="submit">Save changes</button>
+  </form>
+  {% else %}
+  <div class="note">To edit settings from this page, set <code>AR_CONFIG_EDIT=1</code> and <code>AR_ENV_FILE=/path/to/.env</code> (the same file the app loads at startup), then restart — and run behind a login. Until then this page is read-only status.</div>
+  {% endif %}
 
   <h2>Integrations</h2>
 
@@ -117,7 +153,20 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
     ["backLink","helpLink","spConnect","spReconnect"].forEach(function(id){
       var el = document.getElementById(id); if (el) el.href = authed(el.getAttribute("href"));
     });
-    var s = new URLSearchParams(location.search).get("spotify");
+    var form = document.getElementById("cfgForm");
+    if (form && t) {
+      form.action = authed("/config/save");
+      var h = document.createElement("input");
+      h.type = "hidden"; h.name = "token"; h.value = t; form.appendChild(h);
+    }
+    var params = new URLSearchParams(location.search);
+    var saved = params.get("saved");
+    var f = document.getElementById("flash");
+    if (saved !== null) {
+      f.className = "flash " + (saved === "1" ? "ok" : "bad");
+      f.textContent = params.get("msg") || (saved === "1" ? "Saved." : "Save failed.");
+    }
+    var s = params.get("spotify");
     if (s) {
       var f = document.getElementById("flash");
       if (s === "connected") { f.className = "flash ok"; f.textContent = "Spotify connected."; }

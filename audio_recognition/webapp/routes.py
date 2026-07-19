@@ -8,7 +8,9 @@ from flask import (
 )
 
 from .. import corrections, covers, state
+from .. import config
 from . import auth
+from . import envedit
 from ..services import spotify
 from ..services import tidal
 from ..config import (
@@ -401,8 +403,26 @@ def config_page():
                   "connected": tidal.connected() if tidal.configured() else False},
         "lastfm": {"configured": bool(LASTFM_API_KEY)},
     }
-    return render_template("config.html", status=status,
-                           login_enabled=auth.login_enabled())
+    return render_template(
+        "config.html", status=status, login_enabled=auth.login_enabled(),
+        editable=envedit.available(),
+        auth_on=auth.enabled(),
+        env_file=config.ENV_FILE or "",
+        sections=envedit.fields_for_view() if envedit.available() else {},
+    )
+
+
+@bp.route("/config/save", methods=["POST"])
+def config_save():
+    if not envedit.available():
+        abort(404)
+    ok, msg = envedit.apply_form(request.form)
+    from urllib.parse import quote
+    url = f"/config?saved={'1' if ok else '0'}&msg={quote(msg)}"
+    tok = request.form.get("token") or request.args.get("token")
+    if tok:
+        url += f"&token={quote(tok)}"
+    return redirect(url)
 
 
 # --- prometheus metrics --------------------------------------------------

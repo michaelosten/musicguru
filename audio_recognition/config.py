@@ -198,6 +198,14 @@ WEB_SECRET_KEY = os.getenv("AR_WEB_SECRET_KEY")
 # Minutes a login stays valid. 0 = until the browser closes.
 WEB_SESSION_HOURS = _env_int("AR_WEB_SESSION_HOURS", 720)
 
+# --- config editor (optional) --------------------------------------------
+# Let the /config page edit the .env file in place. OFF by default because it
+# exposes writing secrets over the web. When enabled, AR_ENV_FILE must point at
+# the SAME .env the app loads at startup, and you should run behind a login
+# (AR_WEB_PASSWORD_HASH). Edits require an app restart to take effect.
+CONFIG_EDIT_ENABLED = _env_bool("AR_CONFIG_EDIT", False)
+ENV_FILE = os.getenv("AR_ENV_FILE")
+
 
 # --- scrobbling (optional) ----------------------------------------------
 # Scrobble confirmed plays to Last.fm. Needs the API key above PLUS a shared
