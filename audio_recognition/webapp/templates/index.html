@@ -16,7 +16,8 @@
       <span class="name">plexamp&thinsp;·&thinsp;stereo</span>
       <span class="spacer"></span>
       <span class="count meter" id="brandCount"></span>
-      <a class="docslink" id="docsLink" href="/docs" target="_blank" rel="noopener">Docs</a>
+      <a class="docslink" id="configLink" href="/config">Config</a>
+      <a class="docslink" id="helpLink" href="/docs" target="_blank" rel="noopener">Help</a>
       {% if login_enabled %}<a class="docslink" id="logoutLink" href="/logout">Log&nbsp;out</a>{% endif %}
       <span class="ver" id="ver">v{{ version }}</span>
     </div>
@@ -66,6 +67,7 @@
       <button class="btn" id="selectAll">Select all matching</button>
       <button class="btn" id="clearSel">Clear</button>
       <button class="btn" id="createPl">Add to Plex playlist</button>
+      <button class="btn" id="createSp">Create Spotify playlist</button>
       <button class="btn primary" id="download">Download playlist</button>
     </div>
   </div>
@@ -733,6 +735,27 @@
     finally { $("createPl").disabled = false; }
   });
 
+  $("createSp").addEventListener("click", async () => {
+    const ids = [...selected.keys()];
+    if (!ids.length) return;
+    const name = prompt("Spotify playlist name", "Heard on the stereo");
+    if (!name) return;
+    $("createSp").disabled = true;
+    try {
+      const res = await fetch(authed("/create_spotify_playlist"), {
+        method: "POST",
+        headers: hdrs({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ ids, name }),
+      });
+      const js = await res.json();
+      if (!res.ok) { flash(js.error || "Couldn't create the Spotify playlist."); return; }
+      flash(`Created "${js.playlist}" on Spotify — added ${js.added}`
+        + (js.skipped ? `, ${js.skipped} not found.` : ".")
+        + (js.url ? " Open it from your Spotify library." : ""));
+    } catch { flash("Couldn't create the Spotify playlist."); }
+    finally { $("createSp").disabled = false; }
+  });
+
   $("download").addEventListener("click", async () => {
     const ids = [...selected.keys()];
     if (!ids.length) return;
@@ -764,7 +787,8 @@
 
   // ── boot ───────────────────────────────────────────────────────────────
   (async () => {
-    $("docsLink").href = authed("/docs");
+    $("configLink").href = authed("/config");
+    $("helpLink").href = authed("/docs");
     pollNow();
     try {
       const gs = await (await get("/api/genres")).json();

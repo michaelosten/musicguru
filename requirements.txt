@@ -6,6 +6,7 @@ Pillow>=10.0
 pydub>=0.25
 shazamio>=0.4
 PlexAPI>=4.15
+spotipy>=2.24
 
 # Optional: MQTT publishing (Home Assistant, etc.)
 # paho-mqtt>=2.0

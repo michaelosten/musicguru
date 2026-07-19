@@ -138,6 +138,22 @@ PLEX_MUSIC_SECTION = os.getenv("AR_PLEX_MUSIC_SECTION")
 # a fast indexed title search server-side, but they're run concurrently so the
 # page loads in seconds rather than minutes. Raise/lower to taste.
 PLEX_CONCURRENCY = _env_int("AR_PLEX_CONCURRENCY", 12)
+
+# --- Spotify (playlist export) -------------------------------------------
+# Create a Spotify playlist from selected/recognized tracks. Requires a free
+# Spotify developer app (https://developer.spotify.com/dashboard): create one,
+# add a redirect URI that points back at this console, and set the three values
+# below. Then click "Connect Spotify" on the /config page once to authorize.
+SPOTIFY_CLIENT_ID = os.getenv("AR_SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("AR_SPOTIFY_CLIENT_SECRET")
+# Must EXACTLY match a redirect URI registered in the Spotify app, e.g.
+# http://192.168.1.50:8000/spotify/callback
+SPOTIFY_REDIRECT_URI = os.getenv("AR_SPOTIFY_REDIRECT_URI")
+SPOTIFY_TOKEN_CACHE = os.getenv(
+    "AR_SPOTIFY_TOKEN_CACHE",
+    os.path.expanduser("~/.config/audio_recognition/spotify.cache"),
+)
+SPOTIFY_PLAYLIST_PUBLIC = _env_bool("AR_SPOTIFY_PLAYLIST_PUBLIC", False)
 # When False (the default), generated playlists point at this app's /stream/<id>
 # proxy instead of embedding X-Plex-Token in a file you hand to other people.
 PLAYLIST_EMBED_TOKEN = _env_bool("AR_PLAYLIST_EMBED_TOKEN", False)

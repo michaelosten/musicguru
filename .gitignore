@@ -25,3 +25,8 @@ covers/
 *.swp
 .idea/
 .vscode/
+
+# Service auth caches
+*.cache
+spotify.cache
+*.token

@@ -9,6 +9,7 @@ from flask import (
 
 from .. import corrections, covers, state
 from . import auth
+from ..services import spotify
 from ..config import (
     ARCHIVE_MAX_LIMIT, LASTFM_API_KEY, LASTFM_TIMEOUT, PLAYLIST_EMBED_TOKEN,
     PLEX_BASE_URL, PLEX_TOKEN,
@@ -319,6 +320,61 @@ def create_plex_playlist():
         log.warning("Plex playlist failed: %s", e)
         return jsonify({"error": "Plex rejected the playlist."}), 502
     return jsonify({"playlist": name, "added": len(keys), "skipped": len(missing), **result})
+
+
+# --- spotify -------------------------------------------------------------
+
+@bp.route("/spotify/login")
+def spotify_login():
+    url = spotify.login_url()
+    if not url:
+        return jsonify({"error": "Spotify is not configured."}), 400
+    return redirect(url)
+
+
+@bp.route("/spotify/callback")
+def spotify_callback():
+    err = request.args.get("error")
+    if err:
+        return redirect("/config?spotify=denied")
+    ok = spotify.handle_callback(request.args.get("code", ""))
+    return redirect("/config?spotify=" + ("connected" if ok else "failed"))
+
+
+@bp.route("/create_spotify_playlist", methods=["POST"])
+def create_spotify_playlist():
+    p = request.get_json(silent=True) or {}
+    ids = p.get("ids") or []
+    name = (p.get("name") or "").strip() or "Heard on the stereo"
+    if not spotify.configured():
+        return jsonify({"error": "Spotify is not configured (see Config)."}), 400
+    if not spotify.connected():
+        return jsonify({"error": "Connect Spotify on the Config page first."}), 400
+    if not ids:
+        return jsonify({"error": "Select at least one track."}), 400
+
+    tracks = [{"artist": t["artist"], "title": t["title"]}
+              for t in store.get_tracks_by_ids(ids)]
+    try:
+        result = spotify.create_playlist(name, tracks)
+    except Exception as e:
+        log.warning("Spotify playlist failed: %s", e)
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"playlist": name, **result})
+
+
+# --- config / status page ------------------------------------------------
+
+@bp.route("/config")
+def config_page():
+    status = {
+        "plex": {"configured": plex.configured()},
+        "spotify": {"configured": spotify.configured(),
+                    "connected": spotify.connected() if spotify.configured() else False},
+        "lastfm": {"configured": bool(LASTFM_API_KEY)},
+    }
+    return render_template("config.html", status=status,
+                           login_enabled=auth.login_enabled())
 
 
 # --- prometheus metrics --------------------------------------------------
