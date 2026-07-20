@@ -86,9 +86,9 @@ def _client():
     return Spotify(auth_manager=oauth)
 
 
-def search_uri(sp, artist: str, title: str) -> str | None:
-    """Best Spotify track URI for (artist, title), or None."""
-    want_t, want_a = _norm(title), _norm(artist)
+def search_uri(sp, artist: str, title: str, album: str = None) -> str | None:
+    """Best Spotify track URI for (artist, title), preferring a given album."""
+    want_t, want_a, want_al = _norm(title), _norm(artist), (_norm(album) if album else "")
     items = []
     for q in (f'track:{_clean(title)} artist:{_clean(artist)}',
               f'{_clean(artist)} {_clean(title)}'):
@@ -99,15 +99,21 @@ def search_uri(sp, artist: str, title: str) -> str | None:
             items = []
         if items:
             break
-    # exact-ish: title matches and one artist matches
+    matches = []
     for it in items:
-        it_t = _norm(it.get("name", ""))
         arts = [_norm(a.get("name", "")) for a in it.get("artists", [])]
         title_ok = titles_match(title, it.get("name", ""))
         artist_ok = (not want_a) or any(want_a == a or want_a in a or a in want_a for a in arts)
         if title_ok and artist_ok:
-            return it.get("uri")
-    return None
+            matches.append(it)
+    if not matches:
+        return None
+    if want_al:
+        for it in matches:
+            it_al = _norm((it.get("album") or {}).get("name", ""))
+            if it_al and (it_al == want_al or want_al in it_al or it_al in want_al):
+                return it.get("uri")   # pinned album wins
+    return matches[0].get("uri")
 
 
 def create_playlist(name: str, tracks: list) -> dict:
@@ -120,7 +126,7 @@ def create_playlist(name: str, tracks: list) -> dict:
     uris, skipped = [], 0
     seen = set()
     for t in tracks:
-        uri = search_uri(sp, t.get("artist", ""), t.get("title", ""))
+        uri = search_uri(sp, t.get("artist", ""), t.get("title", ""), t.get("album"))
         if uri and uri not in seen:
             uris.append(uri)
             seen.add(uri)
@@ -157,13 +163,13 @@ def _find_or_create_playlist(sp, name: str) -> str:
     return pl["id"]
 
 
-def add_to_named_playlist(name: str, artist: str, title: str) -> bool:
+def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> bool:
     """Append one track to the named playlist (create it if needed). Returns True
     if added, False if the track wasn't found on Spotify."""
     sp = _client()
     if sp is None:
         raise RuntimeError("Spotify not connected")
-    uri = search_uri(sp, artist, title)
+    uri = search_uri(sp, artist, title, album)
     if not uri:
         return False
     sp.playlist_add_items(_find_or_create_playlist(sp, name), [uri])

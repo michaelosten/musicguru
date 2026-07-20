@@ -379,7 +379,7 @@ def create_spotify_playlist():
     if not ids:
         return jsonify({"error": "Select at least one track."}), 400
 
-    tracks = [{"artist": t["artist"], "title": t["title"]}
+    tracks = [{"artist": t["artist"], "title": t["title"], "album": t.get("album")}
               for t in store.get_tracks_by_ids(ids)]
     try:
         result = spotify.create_playlist(name, tracks)
@@ -419,7 +419,7 @@ def create_tidal_playlist():
     if not ids:
         return jsonify({"error": "Select at least one track."}), 400
 
-    tracks = [{"artist": t["artist"], "title": t["title"]}
+    tracks = [{"artist": t["artist"], "title": t["title"], "album": t.get("album")}
               for t in store.get_tracks_by_ids(ids)]
     try:
         result = tidal.create_playlist(name, tracks)

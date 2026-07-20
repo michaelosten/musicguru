@@ -114,7 +114,7 @@ def in_library(artist: str, title: str) -> bool:
     return _lookup(artist, title) is not None
 
 
-def find_track(artist: str, title: str) -> dict | None:
+def find_track(artist: str, title: str, album: str = None) -> dict | None:
     """A playable match: {'location': <file path>, 'title', 'artist'} or None."""
     path = _lookup(artist, title)
     if not path:

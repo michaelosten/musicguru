@@ -42,16 +42,19 @@ def presence_batch(pairs) -> dict:
 
 
 def resolve(artist: str, title: str) -> dict | None:
-    """A playable match for M3U export. Plex -> {'backend':'plex','part_key',
-    'duration'}; local -> {'backend':'local','location':<file path>}."""
+    """A playable match for M3U export, preferring a user-pinned release. Plex ->
+    {'backend':'plex','part_key','duration'}; local -> {'backend':'local','location'}."""
+    from .storage import db
+    ov = db.get_album_override(artist, title)
+    album = ov["album"] if ov else None
     b = backend()
     if b == "plex":
-        m = plex.find_track(artist, title)
+        m = plex.find_track(artist, title, album)
         if m:
             return {"backend": "plex", "part_key": m.get("part_key"),
                     "duration": m.get("duration")}
     elif b == "local":
-        m = local.find_track(artist, title)
+        m = local.find_track(artist, title, album)
         if m:
             return {"backend": "local", "location": m["location"], "duration": None}
     return None

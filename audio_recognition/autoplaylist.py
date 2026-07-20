@@ -32,13 +32,13 @@ def enabled() -> bool:
     return bool(targets())
 
 
-def _add_one(service: str, name: str, artist: str, title: str) -> bool:
+def _add_one(service: str, name: str, artist: str, title: str, album: str = None) -> bool:
     if service == "spotify":
-        return spotify.add_to_named_playlist(name, artist, title)
+        return spotify.add_to_named_playlist(name, artist, title, album)
     if service == "tidal":
-        return tidal.add_to_named_playlist(name, artist, title)
+        return tidal.add_to_named_playlist(name, artist, title, album)
     if service == "plex":
-        m = plex.find_track(artist, title)
+        m = plex.find_track(artist, title, album)
         if m and m.get("rating_key"):
             plex.create_or_append_playlist(name, [m["rating_key"]])
             return True
@@ -52,12 +52,14 @@ def add(artist: str, title: str) -> None:
     if not tgts:
         return
     name = config.AUTO_PLAYLIST_NAME
+    ov = db.get_album_override(artist, title)
+    album = ov["album"] if ov else None
     key = f"{textmatch.norm(artist)}|{textmatch.norm(title)}"
     for svc in tgts:
         try:
             if db.autoplaylist_seen(svc, key):
                 continue
-            added = _add_one(svc, name, artist, title)
+            added = _add_one(svc, name, artist, title, album)
             # Mark as handled whether or not it was found, so we don't re-search
             # a not-on-service track every time it plays. Only a hard error
             # (service down) leaves it unmarked, so it retries later.

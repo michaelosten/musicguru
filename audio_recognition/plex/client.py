@@ -117,10 +117,11 @@ def _search(section, title: str):
         return []
 
 
-def _match(artist: str, title: str) -> dict | None:
+def _match(artist: str, title: str, album: str = None) -> dict | None:
     if not configured():
         return None
-    ck = (_norm(artist), _norm(title))
+    want_album = _norm(album) if album else ""
+    ck = (_norm(artist), _norm(title), want_album)
     if ck in _cache:
         return _cache[ck]
 
@@ -128,12 +129,12 @@ def _match(artist: str, title: str) -> dict | None:
     if section is None:
         return None  # connection/section problem: don't cache, might be transient
 
-    want_artist, want_title = ck
+    want_artist, want_title, _ = ck
     if not want_title:
         _cache[ck] = None
         return None
 
-    best = best_any = None
+    best, best_score = None, -1
     try:
         candidates = _search(section, title)
     except Exception as e:
@@ -150,37 +151,38 @@ def _match(artist: str, title: str) -> dict | None:
                      or want_artist in item_artist or item_artist in want_artist)
         if not (title_ok and artist_ok):
             continue
+        item_album = _norm(getattr(tr, "parentTitle", ""))
+        album_ok = bool(want_album) and (item_album == want_album
+                                         or want_album in item_album or item_album in want_album)
         exact = item_title == want_title and item_artist == want_artist
         part_key = None
         try:
             part_key = tr.media[0].parts[0].key
         except (AttributeError, IndexError):
             pass
-        dur = getattr(tr, "duration", None)
-        cand = {
-            "rating_key": str(getattr(tr, "ratingKey", "")) or None,
-            "part_key": part_key,
-            "duration": int(dur / 1000) if dur else None,
-            "title": getattr(tr, "title", None),
-            "artist": getattr(tr, "grandparentTitle", None),
-        }
-        if best_any is None or exact:
-            best_any = cand
-        if part_key and (best is None or exact):
-            best = cand
-        if exact and part_key:
-            break
+        # Prefer, in order: the pinned album, a streamable copy, an exact label.
+        score = (4 if album_ok else 0) + (2 if part_key else 0) + (1 if exact else 0)
+        if score > best_score:
+            best_score = score
+            best = {
+                "rating_key": str(getattr(tr, "ratingKey", "")) or None,
+                "part_key": part_key,
+                "duration": int(getattr(tr, "duration", 0) / 1000) or None,
+                "title": getattr(tr, "title", None),
+                "artist": getattr(tr, "grandparentTitle", None),
+            }
+        if album_ok and part_key:
+            break   # best possible: right album, streamable
 
-    result = best or best_any
-    if result is None:
+    if best is None:
         log.info("No Plex match for %s - %s", artist, title)
-    _cache[ck] = result
-    return result
+    _cache[ck] = best
+    return best
 
 
-def find_track(artist: str, title: str) -> dict | None:
+def find_track(artist: str, title: str, album: str = None) -> dict | None:
     """A streamable match (guaranteed part_key) -- for streaming and M3U export."""
-    m = _match(artist, title)
+    m = _match(artist, title, album)
     return m if m and m.get("part_key") else None
 
 

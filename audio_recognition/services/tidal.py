@@ -163,9 +163,10 @@ def _tracks_from(results):
     return tracks or []
 
 
-def search_id(session, artist: str, title: str) -> str | None:
-    """Best Tidal track id for (artist, title), or None."""
-    want_t, want_a = _norm(title), _norm(artist)
+def search_id(session, artist: str, title: str, album: str = None) -> str | None:
+    """Best Tidal track id for (artist, title), preferring a given album."""
+    want_a, want_al = _norm(artist), (_norm(album) if album else "")
+    matches = []
     for q in (f"{_clean(artist)} {_clean(title)}", _clean(title)):
         try:
             results = session.search(q, limit=10)
@@ -173,7 +174,6 @@ def search_id(session, artist: str, title: str) -> str | None:
             log.debug("Tidal search failed (%s): %s", q, e)
             continue
         for tr in _tracks_from(results):
-            it_t = _norm(getattr(tr, "name", ""))
             arts = [_norm(getattr(a, "name", "")) for a in (getattr(tr, "artists", []) or [])]
             main = getattr(tr, "artist", None)
             if main is not None:
@@ -181,11 +181,19 @@ def search_id(session, artist: str, title: str) -> str | None:
             title_ok = titles_match(title, getattr(tr, "name", ""))
             artist_ok = (not want_a) or any(
                 want_a == a or want_a in a or a in want_a for a in arts if a)
-            if title_ok and artist_ok:
-                tid = getattr(tr, "id", None)
-                if tid is not None:
-                    return str(tid)
-    return None
+            if title_ok and artist_ok and getattr(tr, "id", None) is not None:
+                matches.append(tr)
+        if matches:
+            break
+    if not matches:
+        return None
+    if want_al:
+        for tr in matches:
+            alb = getattr(tr, "album", None)
+            it_al = _norm(getattr(alb, "name", "")) if alb is not None else ""
+            if it_al and (it_al == want_al or want_al in it_al or it_al in want_al):
+                return str(getattr(tr, "id"))
+    return str(getattr(matches[0], "id"))
 
 
 def create_playlist(name: str, tracks: list) -> dict:
@@ -196,7 +204,7 @@ def create_playlist(name: str, tracks: list) -> dict:
                            "python -m audio_recognition.services.tidal login")
     ids, skipped, seen = [], 0, set()
     for t in tracks:
-        tid = search_id(s, t.get("artist", ""), t.get("title", ""))
+        tid = search_id(s, t.get("artist", ""), t.get("title", ""), t.get("album"))
         if tid and tid not in seen:
             ids.append(tid)
             seen.add(tid)
@@ -230,13 +238,13 @@ def _find_or_create_playlist(s, name: str):
     return pl
 
 
-def add_to_named_playlist(name: str, artist: str, title: str) -> bool:
+def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> bool:
     """Append one track to the named playlist (create it if needed). Returns True
     if added, False if the track wasn't found on Tidal."""
     s = _load_session()
     if s is None:
         raise RuntimeError("Tidal not connected")
-    tid = search_id(s, artist, title)
+    tid = search_id(s, artist, title, album)
     if not tid:
         return False
     _find_or_create_playlist(s, name).add([tid])
