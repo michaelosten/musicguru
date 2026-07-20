@@ -23,11 +23,7 @@ def configured() -> bool:
     return bool(config.LOCAL_LIBRARY_PATH and os.path.isdir(config.LOCAL_LIBRARY_PATH))
 
 
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"\(.*?\)|\[.*?\]", "", s)
-    return re.sub(r"[^0-9a-z]+", "", s.lower())
+from ..textmatch import norm as _norm, titles_match
 
 
 def _read_tags(path: str) -> tuple[str, str]:
@@ -97,6 +93,12 @@ def _lookup(artist: str, title: str):
     if idx is None:
         return None
     arts = idx.get(_norm(title))
+    if arts is None and "*" in (title or ""):
+        # masked title (e.g. "F**k...") -> scan keys with wildcard matching
+        for k, v in idx.items():
+            if titles_match(title, k):
+                arts = v
+                break
     if not arts:
         return None
     wa = _norm(artist)

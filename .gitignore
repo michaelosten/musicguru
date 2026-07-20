@@ -32,5 +32,6 @@ covers/
 *.cache
 spotify.cache
 *.token
+*-session.json
 musicguru.conf
 !musicguru.conf.example

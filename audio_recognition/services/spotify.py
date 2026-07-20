@@ -27,15 +27,7 @@ def configured() -> bool:
     return bool(SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET and SPOTIFY_REDIRECT_URI)
 
 
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"\(.*?\)|\[.*?\]", "", s)
-    return re.sub(r"[^0-9a-z]+", "", s.lower())
-
-
-def _clean(s: str) -> str:
-    return re.sub(r"\(.*?\)|\[.*?\]", "", s or "").strip()
+from ..textmatch import norm as _norm, query_title as _clean, titles_match
 
 
 def _oauth():
@@ -111,7 +103,7 @@ def search_uri(sp, artist: str, title: str) -> str | None:
     for it in items:
         it_t = _norm(it.get("name", ""))
         arts = [_norm(a.get("name", "")) for a in it.get("artists", [])]
-        title_ok = it_t == want_t or want_t in it_t or it_t in want_t
+        title_ok = titles_match(title, it.get("name", ""))
         artist_ok = (not want_a) or any(want_a == a or want_a in a or a in want_a for a in arts)
         if title_ok and artist_ok:
             return it.get("uri")

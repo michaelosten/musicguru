@@ -50,16 +50,7 @@ def _base_url() -> str:
     return u
 
 
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"\(.*?\)|\[.*?\]", "", s)          # drop "(Remastered 2011)" etc.
-    s = re.sub(r"[^0-9a-z]+", "", s.lower())
-    return s
-
-
-def _query_title(title: str) -> str:
-    return re.sub(r"\(.*?\)|\[.*?\]", "", title or "").strip()
+from ..textmatch import norm as _norm, query_title as _query_title, titles_match
 
 
 def _session() -> requests.Session:
@@ -154,8 +145,7 @@ def _match(artist: str, title: str) -> dict | None:
         item_artist = _norm(getattr(tr, "grandparentTitle", ""))
         if not item_title:
             continue
-        title_ok = (item_title == want_title
-                    or want_title in item_title or item_title in want_title)
+        title_ok = titles_match(title, getattr(tr, "title", ""))
         artist_ok = (not want_artist
                      or want_artist in item_artist or item_artist in want_artist)
         if not (title_ok and artist_ok):

@@ -83,6 +83,10 @@ POLL_INTERVAL_SEC = _env_float("AR_POLL_INTERVAL_SEC", 1.0)
 # Consecutive silent segments before Now Playing clears and the EMA resets,
 # so the same song replaying after a real gap is logged as a new play.
 SILENCE_RESET_SEGMENTS = _env_int("AR_SILENCE_RESET_SEGMENTS", 5)
+# Recognition-rate accounting: a stretch of unidentifiable audio only counts
+# as 'unmatched' once it runs this many consecutive segments. Short gaps
+# between or within recognized songs don't count against the match rate.
+UNMATCHED_MIN_SEGMENTS = _env_int("AR_UNMATCHED_MIN_SEGMENTS", 10)
 
 # --- recognition ---------------------------------------------------------
 SHAZAM_TIMEOUT = _env_float("AR_SHAZAM_TIMEOUT", 10.0)
@@ -197,7 +201,7 @@ SPOTIFY_CLIENT_SECRET = os.getenv("AR_SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = os.getenv("AR_SPOTIFY_REDIRECT_URI")
 SPOTIFY_TOKEN_CACHE = os.getenv(
     "AR_SPOTIFY_TOKEN_CACHE",
-    os.path.expanduser("~/.config/audio_recognition/spotify.cache"),
+    os.path.join(_APP_DIR, "spotify-session.json"),
 )
 SPOTIFY_PLAYLIST_PUBLIC = _env_bool("AR_SPOTIFY_PLAYLIST_PUBLIC", False)
 
@@ -207,9 +211,12 @@ SPOTIFY_PLAYLIST_PUBLIC = _env_bool("AR_SPOTIFY_PLAYLIST_PUBLIC", False)
 # (it prints a link.tidal.com URL to approve). The session is cached and
 # refreshed automatically after that.
 TIDAL_ENABLED = _env_bool("AR_TIDAL_ENABLED", False)
+# Stored next to the app (not under ~/.config) so it persists across restarts
+# regardless of the service's HOME -- that HOME mismatch is what forced repeated
+# re-auth. Override with AR_TIDAL_TOKEN_CACHE if you want it elsewhere.
 TIDAL_TOKEN_CACHE = os.getenv(
     "AR_TIDAL_TOKEN_CACHE",
-    os.path.expanduser("~/.config/audio_recognition/tidal.json"),
+    os.path.join(_APP_DIR, "tidal-session.json"),
 )
 # When False (the default), generated playlists point at this app's /stream/<id>
 # proxy instead of embedding X-Plex-Token in a file you hand to other people.

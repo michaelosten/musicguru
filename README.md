@@ -16,6 +16,20 @@ database configured it still records, displays, and serves the archive.
 
 A complete, always-current reference is served in-app at **`/docs`**.
 
+## Screenshots
+
+The live console — now playing, and the recognized-tracks list with in-library badges:
+
+![Console — now playing and tracks](screenshots/tracks.png)
+
+The stats overview — totals, playlist actions, and the date-range filter:
+
+![Stats overview](screenshots/overview.png)
+
+Listening insights — when you listen, plus top artists, albums, and tracks:
+
+![Listening insights](screenshots/stats.png)
+
 ---
 
 ## Table of contents

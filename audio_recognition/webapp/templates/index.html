@@ -664,6 +664,8 @@
     }
     const perDay = (t.per_day != null && t.per_day > 0)
       ? t.per_day.toLocaleString() : "—";
+    const rate = s.recognition && s.recognition.rate != null
+      ? Math.round(s.recognition.rate * 100) + "%" : "—";
     const sessions = s.sessions && s.sessions.count != null
       ? s.sessions.count.toLocaleString() : "—";
     const newArtists = (s.new_artists || []);
@@ -678,6 +680,7 @@
             <div><span>${(t.albums || 0).toLocaleString()}</span><div class="legend">Albums</div></div>
             <div><span>${Math.round((t.minutes || 0) / 60).toLocaleString()}</span><div class="legend">Hours listened</div></div>
             <div><span>${perDay}</span><div class="legend">Plays / day</div></div>
+            <div><span>${rate}</span><div class="legend">Match rate</div></div>
             <div><span>${streak}</span><div class="legend">Day streak</div></div>
             <div><span>${sessions}</span><div class="legend">Sessions</div></div>
             <div style="flex:1"></div>

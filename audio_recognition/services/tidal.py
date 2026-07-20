@@ -30,15 +30,7 @@ def configured() -> bool:
     return bool(TIDAL_ENABLED)
 
 
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"\(.*?\)|\[.*?\]", "", s)
-    return re.sub(r"[^0-9a-z]+", "", s.lower())
-
-
-def _clean(s: str) -> str:
-    return re.sub(r"\(.*?\)|\[.*?\]", "", s or "").strip()
+from ..textmatch import norm as _norm, query_title as _clean, titles_match
 
 
 def _save(session) -> None:
@@ -179,7 +171,7 @@ def search_id(session, artist: str, title: str) -> str | None:
             main = getattr(tr, "artist", None)
             if main is not None:
                 arts.append(_norm(getattr(main, "name", "")))
-            title_ok = it_t == want_t or want_t in it_t or it_t in want_t
+            title_ok = titles_match(title, getattr(tr, "name", ""))
             artist_ok = (not want_a) or any(
                 want_a == a or want_a in a or a in want_a for a in arts if a)
             if title_ok and artist_ok:

@@ -12,6 +12,7 @@ from .config import (
     EMA_ALPHA,
     ENRICH_ENABLED,
     SILENCE_RESET_SEGMENTS,
+    UNMATCHED_MIN_SEGMENTS,
     EMA_PRUNE_EPSILON,
     EMA_THRESHOLD,
     FLASK_DEBUG,
@@ -114,6 +115,7 @@ async def loop_pipeline() -> None:
     # song change is caught -- there's no dead gap between segments now.
     buffers = (config.AUDIO_FILE, config.AUDIO_FILE + ".b")
     idx = 0
+    miss_run = 0   # consecutive unidentified segments; short runs don't count
     next_capture = asyncio.create_task(record_and_normalize(buffers[idx]))
 
     while not _stop.is_set():
@@ -169,10 +171,16 @@ async def loop_pipeline() -> None:
         if track is None:
             track = await recognize(path)
         if not track:
-            await asyncio.to_thread(record_segment, False)
+            # A track "counts as unmatched" only when audio stays unidentifiable
+            # for a sustained run -- brief gaps between/within recognized songs
+            # (talking, intros, transitions) don't penalize the match rate.
+            miss_run += 1
+            if miss_run >= UNMATCHED_MIN_SEGMENTS:
+                await asyncio.to_thread(record_segment, False)
             # No trailing sleep -- the next segment is already recording.
             continue
 
+        miss_run = 0
         await asyncio.to_thread(record_segment, True)
         # Apply any learned correction to the raw recognition before it votes or
         # is displayed/saved, so a fixed mis-ID stays fixed.
