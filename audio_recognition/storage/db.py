@@ -310,6 +310,16 @@ def ensure_schema() -> None:
                 " added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
                 " PRIMARY KEY (service, match_key))"
             )
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS album_overrides ("
+                " artist VARCHAR(255) NOT NULL,"
+                " title VARCHAR(255) NOT NULL,"
+                " album VARCHAR(512) NOT NULL,"
+                " cover_url VARCHAR(512),"
+                " updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                "   ON UPDATE CURRENT_TIMESTAMP,"
+                " PRIMARY KEY (artist, title))"
+            )
             conn.commit()
         log.info("Schema ensured.")
     except mysql.connector.Error as e:
@@ -344,6 +354,42 @@ def autoplaylist_mark(service: str, match_key: str) -> None:
             conn.commit()
     except mysql.connector.Error as e:
         log.warning("autoplaylist_mark failed: %s", e)
+
+
+def set_album_override(artist: str, title: str, album: str, cover_url: str = None) -> int:
+    """Pin a track's album to a chosen release, updating all existing plays too.
+    Returns how many play rows were relabeled."""
+    try:
+        with _cursor() as (conn, cur):
+            cur.execute(
+                "INSERT INTO album_overrides (artist, title, album, cover_url) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE album=VALUES(album), cover_url=VALUES(cover_url)",
+                (artist[:255], title[:255], album[:512], (cover_url or None)),
+            )
+            cur.execute(
+                "UPDATE recognized_songs SET album=%s WHERE artist=%s AND title=%s",
+                (album[:512], artist, title),
+            )
+            n = cur.rowcount
+            conn.commit()
+            return n
+    except mysql.connector.Error as e:
+        log.warning("set_album_override failed: %s", e)
+        return 0
+
+
+def get_album_override(artist: str, title: str) -> dict | None:
+    try:
+        with _cursor() as (_c, cur):
+            cur.execute(
+                "SELECT album, cover_url FROM album_overrides WHERE artist=%s AND title=%s",
+                (artist[:255], title[:255]),
+            )
+            return cur.fetchone()
+    except mysql.connector.Error as e:
+        log.warning("get_album_override failed: %s", e)
+        return None
 
 
 def load_corrections() -> dict:

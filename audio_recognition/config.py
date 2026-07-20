@@ -65,8 +65,9 @@ AUDIO_FILE = os.getenv("AR_AUDIO_FILE", "/tmp/recorded_audio.wav")
 COVER_ART_FILE = os.getenv("AR_COVER_ART_FILE", "/tmp/cover_art.jpg")
 # Default moved out of /var/log: that path needs root and made logging_setup
 # raise PermissionError at import time.
-LOG_FILE = os.getenv("AR_LOG_FILE", os.path.expanduser("~/.local/state/audio_recognition.log"))
+LOG_FILE = os.getenv("AR_LOG_FILE", "/var/log/musicguru.log")
 LOG_LEVEL = os.getenv("AR_LOG_LEVEL", "INFO").upper()
+LOG_BACKUP_DAYS = _env_int("AR_LOG_BACKUP_DAYS", 14)
 
 # --- capture -------------------------------------------------------------
 ALSA_DEVICE = os.getenv("AR_ALSA_DEVICE", "hw:1,0")

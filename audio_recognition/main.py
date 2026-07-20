@@ -30,6 +30,7 @@ from .enrich import enrich_track
 from .logging_setup import setup_logging
 from .recognize.shazam_client import Track, recognize
 from .storage.db import (
+    get_album_override,
     ensure_schema,
     get_now_context,
     record_segment,
@@ -197,6 +198,14 @@ async def loop_pipeline() -> None:
             # local match already carries enriched metadata, so skip it there.
             if ENRICH_ENABLED and not getattr(track, "_local", False):
                 await asyncio.to_thread(enrich_track, track)
+
+            # A user-pinned release (chosen in the console) wins over whatever the
+            # recognizer attributed the song to.
+            _ov = await asyncio.to_thread(get_album_override, track.artist, track.title)
+            if _ov and _ov.get("album"):
+                track.album = _ov["album"]
+                if _ov.get("cover_url"):
+                    track.cover_url = _ov["cover_url"]
 
             log.info("Now playing: %s [dur=%s]", track.ident, track.duration)
 

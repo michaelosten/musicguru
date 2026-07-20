@@ -454,6 +454,30 @@ def config_page():
     )
 
 
+@bp.route("/api/releases")
+def releases():
+    """Candidate releases (albums) for a track, from MusicBrainz."""
+    artist = request.args.get("artist", "").strip()
+    title = request.args.get("title", "").strip()
+    if not artist or not title:
+        return jsonify({"releases": []})
+    from .. import musicbrainz
+    return jsonify({"releases": musicbrainz.search_releases(artist, title)})
+
+
+@bp.route("/api/set_release", methods=["POST"])
+def set_release():
+    p = request.get_json(silent=True) or {}
+    artist = (p.get("artist") or "").strip()
+    title = (p.get("title") or "").strip()
+    album = (p.get("album") or "").strip()
+    cover_url = (p.get("cover_url") or "").strip() or None
+    if not (artist and title and album):
+        return jsonify({"error": "artist, title, and album are required."}), 400
+    n = store.set_album_override(artist, title, album, cover_url)
+    return jsonify({"album": album, "relabeled": n})
+
+
 @bp.route("/api/capture_devices")
 def capture_devices():
     """List ALSA capture devices (arecord -l) so the user can find their line-in

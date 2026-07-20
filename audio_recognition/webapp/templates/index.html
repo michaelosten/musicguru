@@ -351,6 +351,12 @@
     fixBtn.title = "Relabel this and remember the correction";
     fixBtn.addEventListener("click", () => fixRow(row, r));
     acts.append(fixBtn);
+    const relBtn = document.createElement("button");
+    relBtn.className = "svc fix";
+    relBtn.textContent = "Release";
+    relBtn.title = "Find the correct album/release for this track";
+    relBtn.addEventListener("click", () => releaseRow(row, r, sub));
+    acts.append(relBtn);
 
     mid.append(name, sub, acts);
     mid.style.cursor = r.album ? "pointer" : "default";
@@ -479,6 +485,81 @@
       if (nameEl) nameEl.textContent = title;
       flash(`Fixed — relabeled ${js.relabeled} play${js.relabeled === 1 ? "" : "s"}. Future mis-IDs auto-correct.`);
     } catch { flash("Couldn't apply that fix."); }
+  }
+
+  // ── release picker ──────────────────────────────────────────────────────
+  async function releaseRow(row, r, subEl) {
+    // overlay
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:var(--panel);border:1px solid var(--hairline);border-radius:6px;max-width:560px;width:100%;max-height:80vh;overflow:auto;padding:18px 20px;";
+    box.innerHTML = `<div style="font-family:var(--legend);letter-spacing:.04em;font-size:15px;margin-bottom:2px;">Correct release</div>
+      <div style="color:var(--ink-dim);font-size:13px;margin-bottom:12px;">${r.artist} — ${r.title}${r.album ? " · currently: " + r.album : ""}</div>
+      <div id="relList" style="font-size:14px;">Searching MusicBrainz…</div>
+      <div style="margin-top:14px;text-align:right;"><button id="relCancel" class="btn">Close</button></div>`;
+    ov.append(box);
+    document.body.append(ov);
+    const close = () => ov.remove();
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    box.querySelector("#relCancel").addEventListener("click", close);
+
+    const list = box.querySelector("#relList");
+    let releases = [];
+    try {
+      const res = await get(`/api/releases?artist=${encodeURIComponent(r.artist)}&title=${encodeURIComponent(r.title)}`);
+      releases = (await res.json()).releases || [];
+    } catch { /* fall through to empty */ }
+
+    if (!releases.length) {
+      list.innerHTML = `<div style="color:var(--ink-dim);">No releases found. You can set one manually:</div>`;
+      const man = document.createElement("button");
+      man.className = "btn"; man.style.marginTop = "8px"; man.textContent = "Enter album name";
+      man.addEventListener("click", async () => {
+        const album = prompt("Album / release name", r.album || "");
+        if (album && album.trim()) { await applyRelease(r, album.trim(), null, row, subEl); close(); }
+      });
+      list.innerHTML = ""; list.append(man);
+      return;
+    }
+
+    list.innerHTML = "";
+    releases.forEach((rel) => {
+      const item = document.createElement("div");
+      item.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--hairline);cursor:pointer;";
+      item.innerHTML = `
+        <div style="flex:1;">
+          <div style="color:var(--ink);">${rel.album || "—"}</div>
+          <div style="color:var(--ink-dim);font-size:12px;">${rel.year || "----"} · ${rel.type}${rel.is_original ? " · original" : ""}</div>
+        </div>`;
+      item.addEventListener("mouseenter", () => item.style.background = "var(--deep)");
+      item.addEventListener("mouseleave", () => item.style.background = "");
+      item.addEventListener("click", async () => { await applyRelease(r, rel.album, rel.cover_url, row, subEl); close(); });
+      list.append(item);
+    });
+  }
+
+  async function applyRelease(r, album, cover_url, row, subEl) {
+    try {
+      const res = await fetch(authed("/api/set_release"), {
+        method: "POST",
+        headers: hdrs({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ artist: r.artist, title: r.title, album, cover_url }),
+      });
+      const js = await res.json();
+      if (!res.ok) { flash(js.error || "Couldn't set the release."); return; }
+      r.album = album;
+      if (subEl) {
+        subEl.textContent = r.artist;
+        subEl.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "·" }));
+        subEl.append(album);
+        if (r.genre) {
+          subEl.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "·" }));
+          subEl.append(r.genre);
+        }
+      }
+      flash(`Release set to “${album}” — updated ${js.relabeled} play${js.relabeled === 1 ? "" : "s"}.`);
+    } catch { flash("Couldn't set the release."); }
   }
 
   // ── want-list (heard, not in Plex) ──────────────────────────────────────

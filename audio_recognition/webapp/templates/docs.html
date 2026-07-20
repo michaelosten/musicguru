@@ -181,6 +181,11 @@
   existing play that matched the wrong identity, and stores a raw→canonical mapping that is
   applied automatically to all <i>future</i> recognitions — so the same misidentification is
   corrected before it's ever logged wrong again.</p>
+  <p>The <b>Release</b> button fixes the <i>album</i> a track is attributed to. Recognizers often
+  credit a song to a "Greatest Hits" or compilation; click Release to search MusicBrainz for the
+  actual releases it appeared on (originals listed first, compilations/live pushed down), pick the
+  right one, and it's pinned — updating every existing play and all future ones. If MusicBrainz
+  has nothing, you can type an album name manually.</p>
 
   <h2 id="integrations">7. Integrations</h2>
   <p>All optional; each is inert until its variables are set.</p>
@@ -286,6 +291,10 @@
   create a username and password (stored hashed). After that every visit requires that login;
   a machine token (<code>AR_WEB_TOKEN</code>) still works for API/health callers. You can
   change the credentials any time from the Config page.</p>
+  <p><b>Logging.</b> Logs go to <code>/var/log/musicguru.log</code> (override with
+  <code>AR_LOG_FILE</code>), rotated daily with <code>AR_LOG_BACKUP_DAYS</code> days kept
+  (default 14). If that path isn't writable it falls back to the app directory, then the user
+  state dir. Level is <code>AR_LOG_LEVEL</code> (default INFO).</p>
 
   <h3>Capture &amp; recognition</h3>
   <table>

@@ -112,3 +112,9 @@ AR_AUTO_PLAYLIST_PLEX=0
 # 'List capture devices' button on /config), e.g. hw:1,0. Line-in is usually stereo.
 # AR_ALSA_DEVICE=hw:1,0
 # AR_CAPTURE_CHANNELS=1        # set 2 for a stereo line-in
+
+# --- Logging ---------------------------------------------------------------
+# Rotates daily; falls back to the app dir if /var/log isn't writable.
+# AR_LOG_FILE=/var/log/musicguru.log
+# AR_LOG_LEVEL=INFO
+# AR_LOG_BACKUP_DAYS=14
