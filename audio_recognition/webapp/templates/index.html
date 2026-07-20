@@ -579,6 +579,16 @@
       const js = await res.json();
       if (!res.ok) { flash(js.error || "Couldn't set the release."); return; }
       r.album = album;
+      if (cover_url) {
+        r.cover_url = cover_url;
+        const art = row.querySelector(".art");
+        if (art) {
+          // Backend now has the new cover_url for this row; bust the cache so
+          // /cover/<id> re-serves it (works even if the row had no art before).
+          delete art.dataset.fellBack;
+          art.src = authed(`/cover/${r.id}?v=${Date.now()}`);
+        }
+      }
       if (subEl) {
         subEl.textContent = r.artist;
         subEl.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "·" }));

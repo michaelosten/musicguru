@@ -367,10 +367,17 @@ def set_album_override(artist: str, title: str, album: str, cover_url: str = Non
                 "ON DUPLICATE KEY UPDATE album=VALUES(album), cover_url=VALUES(cover_url)",
                 (artist[:255], title[:255], album[:512], (cover_url or None)),
             )
-            cur.execute(
-                "UPDATE recognized_songs SET album=%s WHERE artist=%s AND title=%s",
-                (album[:512], artist, title),
-            )
+            if cover_url:
+                cur.execute(
+                    "UPDATE recognized_songs SET album=%s, cover_url=%s "
+                    "WHERE artist=%s AND title=%s",
+                    (album[:512], cover_url, artist, title),
+                )
+            else:
+                cur.execute(
+                    "UPDATE recognized_songs SET album=%s WHERE artist=%s AND title=%s",
+                    (album[:512], artist, title),
+                )
             n = cur.rowcount
             conn.commit()
             return n
