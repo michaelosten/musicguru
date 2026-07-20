@@ -16,6 +16,10 @@ from .. import config
 
 # (key, label, kind, section). kind: text | int | bool | secret
 SCHEMA = [
+    ("AR_ALSA_DEVICE", "Capture device (arecord -D)", "text", "Capture"),
+    ("AR_CAPTURE_CHANNELS", "Channels (1 mic, 2 line-in)", "int", "Capture"),
+    ("AR_SAMPLE_RATE", "Sample rate (Hz)", "int", "Capture"),
+
     ("AR_PLEX_BASE_URL", "Base URL", "text", "Plex"),
     ("AR_PLEX_TOKEN", "Token", "secret", "Plex"),
     ("AR_PLEX_VERIFY_SSL", "Verify TLS", "bool", "Plex"),

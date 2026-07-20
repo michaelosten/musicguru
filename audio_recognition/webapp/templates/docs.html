@@ -63,11 +63,17 @@
   </ul>
 
   <h2 id="overview">1. Overview</h2>
-  <p>The daemon listens to room audio through a USB microphone, and every few seconds records a short
+  <p>The daemon listens to room audio — through a USB microphone or a line-in / audio-capture
+  input — and every few seconds records a short
   segment, identifies the music playing, and logs it to a MySQL database. It drives an
   optional small framebuffer display (album art via <code>feh</code>) and serves this web
   console for browsing history, statistics, and playlists. Identification uses Shazam,
   backed by a local fingerprint cache so repeats are recognized without a network call.</p>
+  <p><b>Mic or line-in:</b> capture is just an ALSA device. Point <code>AR_ALSA_DEVICE</code> at
+  your input (use <em>List capture devices</em> on the Config page, or <code>arecord -l</code>,
+  to find it — e.g. <code>hw:1,0</code>). Line-in is usually stereo, so set
+  <code>AR_CAPTURE_CHANNELS=2</code>; it's downmixed to mono for recognition. A cleaner line-in
+  signal may also let you lower <code>AR_SILENCE_THRESHOLD_DB</code>.</p>
   <p>Everything is configured through <code>AR_*</code> environment variables (see
   <a href="#config">§10</a>); secrets never live in the source. Feature areas that need
   credentials — Plex, Last.fm scrobbling, Home Assistant, alerts — are inert until

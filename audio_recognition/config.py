@@ -70,6 +70,10 @@ LOG_LEVEL = os.getenv("AR_LOG_LEVEL", "INFO").upper()
 
 # --- capture -------------------------------------------------------------
 ALSA_DEVICE = os.getenv("AR_ALSA_DEVICE", "hw:1,0")
+# Capture channels. A room mic is mono (1); a line-in / USB audio capture is
+# usually stereo (2) and some such devices refuse mono capture outright. Stereo
+# is downmixed to mono after recording, since recognition wants mono anyway.
+CAPTURE_CHANNELS = _env_int("AR_CAPTURE_CHANNELS", 1)
 RECORD_DURATION = _env_int("AR_RECORD_DURATION", 6)
 SAMPLE_RATE = _env_int("AR_SAMPLE_RATE", 44100)
 SILENCE_THRESHOLD_DB = _env_float("AR_SILENCE_THRESHOLD_DB", -45.0)

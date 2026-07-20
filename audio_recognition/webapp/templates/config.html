@@ -54,6 +54,8 @@
   {% if editable %}
   <h2>Edit configuration</h2>
   <p class="sub">Writes to <code>{{ env_file }}</code> — this app's own config file. Secrets are write-only (blank keeps the current value). <strong>Most changes take effect after a restart; the login username/password apply immediately.</strong></p>
+  <p class="sub">Using line-in instead of a mic? Set <strong>Capture device</strong> to your line-in (find it below), and <strong>Channels</strong> to 2 if it's stereo. <button type="button" class="btn" id="devBtn">List capture devices</button></p>
+  <pre id="devBox" hidden></pre>
   {% if not auth_on %}
   <div class="flash bad">No login is configured — anyone who can reach this console can read and change these settings. Set <code>AR_WEB_PASSWORD_HASH</code> and restart.</div>
   {% endif %}
@@ -189,6 +191,18 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
       if (s === "connected") { f.className = "flash ok"; f.textContent = "Spotify connected."; }
       else if (s === "denied") { f.className = "flash bad"; f.textContent = "Spotify authorization was declined."; }
       else if (s === "failed") { f.className = "flash bad"; f.textContent = "Spotify authorization failed — check your app credentials and redirect URI."; }
+    }
+
+    // Capture-device lister (helps set line-in vs mic)
+    var devBtn = document.getElementById("devBtn");
+    if (devBtn) {
+      devBtn.addEventListener("click", function () {
+        var box = document.getElementById("devBox");
+        box.hidden = false; box.textContent = "Listing…";
+        fetch(authed("/api/capture_devices")).then(function (r) { return r.json(); })
+          .then(function (j) { box.textContent = j.text || "(nothing)"; })
+          .catch(function () { box.textContent = "Couldn't list devices."; });
+      });
     }
 
     // Tidal in-console device login

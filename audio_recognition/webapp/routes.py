@@ -454,6 +454,21 @@ def config_page():
     )
 
 
+@bp.route("/api/capture_devices")
+def capture_devices():
+    """List ALSA capture devices (arecord -l) so the user can find their line-in
+    or mic and set AR_ALSA_DEVICE (e.g. hw:1,0)."""
+    import subprocess
+    try:
+        out = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=5)
+        text = (out.stdout or "") + (out.stderr or "")
+    except FileNotFoundError:
+        text = "arecord not found (install alsa-utils)."
+    except Exception as e:
+        text = f"Could not list devices: {e}"
+    return jsonify({"text": text.strip() or "No capture devices found."})
+
+
 @bp.route("/config/save", methods=["POST"])
 def config_save():
     if not envedit.available():

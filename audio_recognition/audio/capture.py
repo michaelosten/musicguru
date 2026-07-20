@@ -8,6 +8,7 @@ from pydub.effects import normalize
 from ..config import (
     ALSA_DEVICE,
     AUDIO_FILE,
+    CAPTURE_CHANNELS,
     DESIRED_AVG_DBFS,
     NORMALIZATION_HEADROOM_DB,
     PEAK_MARGIN_DB,
@@ -25,7 +26,7 @@ async def _arecord(path: str) -> bool:
         proc = await asyncio.create_subprocess_exec(
             "arecord",
             "-f", "S16_LE",
-            "-c", "1",
+            "-c", str(CAPTURE_CHANNELS),
             "-r", str(SAMPLE_RATE),
             "-D", ALSA_DEVICE,
             "-d", str(RECORD_DURATION),
@@ -64,6 +65,11 @@ def _process(path: str):
     if len(raw) == 0:
         log.warning("Empty recording")
         return None
+
+    # Line-in is typically stereo; recognition (and the fingerprint cache) work
+    # on mono, so fold it down before measuring level or exporting.
+    if raw.channels > 1:
+        raw = raw.set_channels(1)
 
     log.debug("Recorded dBFS: %.2f", raw.dBFS)
     if raw.dBFS < SILENCE_THRESHOLD_DB:  # -inf for pure silence, compares fine
