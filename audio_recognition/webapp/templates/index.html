@@ -505,10 +505,12 @@
     box.querySelector("#relCancel").addEventListener("click", close);
 
     const list = box.querySelector("#relList");
-    let releases = [];
+    let releases = [], source = "";
     try {
       const res = await get(`/api/releases?artist=${encodeURIComponent(r.artist)}&title=${encodeURIComponent(r.title)}`);
-      releases = (await res.json()).releases || [];
+      const j = await res.json();
+      releases = j.releases || [];
+      source = j.source || "";
     } catch { /* fall through to empty */ }
 
     if (!releases.length) {
@@ -524,13 +526,23 @@
     }
 
     list.innerHTML = "";
+    if (source) {
+      const src = document.createElement("div");
+      src.style.cssText = "color:var(--ink-faint);font-size:11px;margin-bottom:8px;";
+      src.textContent = "via " + source;
+      list.append(src);
+    }
     releases.forEach((rel) => {
+      const meta = [rel.year, rel.type].filter(Boolean).join(" · ");
       const item = document.createElement("div");
       item.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--hairline);cursor:pointer;";
-      item.innerHTML = `
-        <div style="flex:1;">
-          <div style="color:var(--ink);">${rel.album || "—"}</div>
-          <div style="color:var(--ink-dim);font-size:12px;">${rel.year || "----"} · ${rel.type}${rel.is_original ? " · original" : ""}</div>
+      const art = rel.cover_url
+        ? `<img src="${rel.cover_url}" style="width:38px;height:38px;border-radius:3px;object-fit:cover;flex:0 0 auto;" onerror="this.style.visibility='hidden'"/>`
+        : `<div style="width:38px;height:38px;border-radius:3px;background:var(--deep);flex:0 0 auto;"></div>`;
+      item.innerHTML = `${art}
+        <div style="flex:1;min-width:0;">
+          <div style="color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${rel.album || "—"}</div>
+          <div style="color:var(--ink-dim);font-size:12px;">${meta || "album"}</div>
         </div>`;
       item.addEventListener("mouseenter", () => item.style.background = "var(--deep)");
       item.addEventListener("mouseleave", () => item.style.background = "");

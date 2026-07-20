@@ -456,13 +456,21 @@ def config_page():
 
 @bp.route("/api/releases")
 def releases():
-    """Candidate releases (albums) for a track, from MusicBrainz."""
+    """Candidate releases (albums) for a track. Uses Last.fm when a key is set
+    (it's what you already have configured), falling back to MusicBrainz."""
     artist = request.args.get("artist", "").strip()
     title = request.args.get("title", "").strip()
     if not artist or not title:
         return jsonify({"releases": []})
-    from .. import musicbrainz
-    return jsonify({"releases": musicbrainz.search_releases(artist, title)})
+    from .. import lastfm, musicbrainz
+    rels, source = [], None
+    if lastfm.configured():
+        rels = lastfm.search_releases(artist, title)
+        source = "last.fm"
+    if not rels:
+        rels = musicbrainz.search_releases(artist, title)
+        source = "musicbrainz"
+    return jsonify({"releases": rels, "source": source})
 
 
 @bp.route("/api/set_release", methods=["POST"])
