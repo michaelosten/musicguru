@@ -54,18 +54,20 @@ def enabled() -> bool:
     return bool(_enabled_services())
 
 
-def _add_one(service: str, name: str, artist: str, title: str, album: str = None) -> bool:
+def _add_one(service: str, name: str, artist: str, title: str, album: str = None) -> str:
+    """Returns 'added', 'present' (already in the playlist), or 'absent' (not
+    found on the service)."""
     if service == "spotify":
         return spotify.add_to_named_playlist(name, artist, title, album)
     if service == "tidal":
         return tidal.add_to_named_playlist(name, artist, title, album)
     if service == "plex":
         rk = plex.match_rating_key(artist, title, album)
-        if rk:
-            plex.create_or_append_playlist(name, [rk])
-            return True
-        return False
-    return False
+        if not rk:
+            return "absent"
+        res = plex.create_or_append_playlist(name, [rk])
+        return "added" if res.get("added", 1) else "present"
+    return "absent"
 
 
 def enqueue(artist: str, title: str, album: str = None) -> None:
@@ -91,19 +93,23 @@ def flush(limit: int = 25) -> int:
         return 0
     ready = {s: _service_ready(s) for s in set(r["service"] for r in rows)}
     name = config.AUTO_PLAYLIST_NAME
-    added = skipped = deferred = 0
+    added = present = skipped = deferred = 0
     for row in rows:
         svc, key = row["service"], row["match_key"]
         if not ready.get(svc):
             continue   # service not usable right now; leave for a later flush
         try:
-            ok = _add_one(svc, name, row["artist"], row["title"], row.get("album"))
-            # Added, or confirmed absent on the service -> handled; stop retrying.
+            status = _add_one(svc, name, row["artist"], row["title"], row.get("album"))
+            # added / present / absent are all "handled" -> stop retrying.
             db.autoplaylist_mark(svc, key)
             db.autoplaylist_queue_remove(svc, key)
-            if ok:
+            if status == "added":
                 added += 1
                 log.info("Auto-playlist: added %s - %s to %s",
+                         row["artist"], row["title"], svc)
+            elif status == "present":
+                present += 1
+                log.info("Auto-playlist: %s - %s already in %s playlist (skipping)",
                          row["artist"], row["title"], svc)
             else:
                 skipped += 1
@@ -114,9 +120,10 @@ def flush(limit: int = 25) -> int:
             db.autoplaylist_queue_attempt(svc, key)   # transient; retry later
             log.warning("Auto-playlist %s failed for %s - %s (will retry): %s",
                         svc, row["artist"], row["title"], e)
-    if added or skipped or deferred:
-        log.info("Auto-playlist flush: %d added, %d skipped, %d deferred; %d still queued",
-                 added, skipped, deferred, db.autoplaylist_queue_depth())
+    if added or present or skipped or deferred:
+        log.info("Auto-playlist flush: %d added, %d already-in, %d not-found, "
+                 "%d deferred; %d still queued", added, present, skipped, deferred,
+                 db.autoplaylist_queue_depth())
     return added
 
 

@@ -144,6 +144,7 @@ def create_playlist(name: str, tracks: list) -> dict:
 
 
 _pl_cache: dict[str, str] = {}   # playlist name -> id (auto-playlist)
+_pl_tracks: dict[str, set] = {}  # playlist id -> set of track URIs already in it
 
 
 def _find_or_create_playlist(sp, name: str) -> str:
@@ -163,17 +164,43 @@ def _find_or_create_playlist(sp, name: str) -> str:
     return pl["id"]
 
 
-def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> bool:
-    """Append one track to the named playlist (create it if needed). Returns True
-    if added, False if the track wasn't found on Spotify."""
+def _existing_uris(sp, pid: str) -> set:
+    """URIs already in the playlist, fetched once and cached, so we don't add a
+    track that's already there (added manually or on a previous run)."""
+    if pid in _pl_tracks:
+        return _pl_tracks[pid]
+    uris = set()
+    try:
+        res = sp.playlist_items(pid, fields="items(track(uri)),next",
+                                additional_types=["track"], limit=100)
+        while res:
+            for it in res.get("items", []):
+                t = it.get("track") or {}
+                if t.get("uri"):
+                    uris.add(t["uri"])
+            res = sp.next(res) if res.get("next") else None
+    except Exception as e:
+        log.debug("Spotify playlist_items failed: %s", e)
+    _pl_tracks[pid] = uris
+    return uris
+
+
+def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> str:
+    """Append one track to the named playlist (create it if needed). Returns
+    'added', 'present' (already in the playlist), or 'absent' (not found)."""
     sp = _client()
     if sp is None:
         raise RuntimeError("Spotify not connected")
     uri = search_uri(sp, artist, title, album)
     if not uri:
-        return False
-    sp.playlist_add_items(_find_or_create_playlist(sp, name), [uri])
-    return True
+        return "absent"
+    pid = _find_or_create_playlist(sp, name)
+    existing = _existing_uris(sp, pid)
+    if uri in existing:
+        return "present"
+    sp.playlist_add_items(pid, [uri])
+    existing.add(uri)
+    return "added"
 
 
 if __name__ == "__main__":

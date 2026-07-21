@@ -259,23 +259,33 @@ def create_or_append_playlist(title: str, rating_keys: list) -> dict:
         log.debug("Plex playlist list failed: %s", e)
 
     if existing is not None:
+        # Skip items already in the playlist.
+        have = set()
         try:
-            existing.addItems(items)
+            have = {str(it.ratingKey) for it in existing.items()}
         except Exception as e:
-            # Some Plex versions reject a whole batch if one item is already in
-            # the playlist; fall back to adding individually so one dup or bad
-            # item doesn't block the rest.
-            log.debug("Plex addItems batch failed (%s); adding individually", e)
-            for it in items:
-                try:
-                    existing.addItems([it])
-                except Exception as e2:
-                    log.debug("Plex addItem skipped: %s", e2)
-        return {"created": False, "playlist_key": str(existing.ratingKey)}
+            log.debug("Plex playlist items fetch failed: %s", e)
+        new_items = [it for it in items if str(getattr(it, "ratingKey", "")) not in have]
+        if new_items:
+            try:
+                existing.addItems(new_items)
+            except Exception as e:
+                # Some Plex versions reject a whole batch if one item is already
+                # in the playlist; add individually so one dup/bad item doesn't
+                # block the rest.
+                log.debug("Plex addItems batch failed (%s); adding individually", e)
+                for it in new_items:
+                    try:
+                        existing.addItems([it])
+                    except Exception as e2:
+                        log.debug("Plex addItem skipped: %s", e2)
+        return {"created": False, "playlist_key": str(existing.ratingKey),
+                "added": len(new_items), "skipped": len(items) - len(new_items)}
 
     from plexapi.playlist import Playlist
     pl = Playlist.create(server, title, items=items)
-    return {"created": True, "playlist_key": str(getattr(pl, "ratingKey", "")) or None}
+    return {"created": True, "playlist_key": str(getattr(pl, "ratingKey", "")) or None,
+            "added": len(items), "skipped": 0}
 
 
 if __name__ == "__main__":

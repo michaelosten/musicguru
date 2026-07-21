@@ -345,7 +345,14 @@ def create_plex_playlist():
     except Exception as e:
         log.warning("Plex playlist failed: %s", e)
         return jsonify({"error": "Plex rejected the playlist."}), 502
-    return jsonify({"playlist": name, "added": len(keys), "skipped": len(missing), **result})
+    return jsonify({
+        "playlist": name,
+        "created": result.get("created"),
+        "added": result.get("added", len(keys)),          # newly added to the playlist
+        "already_in_playlist": result.get("skipped", 0),  # were already there
+        "not_in_library": len(missing),                   # couldn't be matched in Plex
+        "playlist_key": result.get("playlist_key"),
+    })
 
 
 # --- spotify -------------------------------------------------------------

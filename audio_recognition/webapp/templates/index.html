@@ -911,7 +911,9 @@
       const js = await res.json();
       if (!res.ok) { flash(js.error || "Couldn't create the playlist."); return; }
       flash(`${js.created ? "Created" : "Updated"} "${js.playlist}" — added ${js.added}`
-        + (js.skipped ? `, skipped ${js.skipped} not in Plex.` : "."));
+        + (js.already_in_playlist ? `, ${js.already_in_playlist} already in playlist` : "")
+        + (js.not_in_library ? `, ${js.not_in_library} not in Plex` : "")
+        + ".");
     } catch { flash("Couldn't create the playlist."); }
     finally { $("createPl").disabled = false; }
   });

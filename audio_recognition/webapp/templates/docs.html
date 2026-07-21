@@ -215,7 +215,7 @@
   name and toggle it per service (Spotify, Tidal, Plex) on the Config page. Each distinct track
   is added once per service, and that dedupe survives restarts, so the playlist becomes a living
   record of everything the room has played. A track that isn't on a given service is simply
-  skipped there.</p>
+  skipped there. A track already in the playlist (added by hand or on a previous run) is detected and skipped rather than duplicated.</p>
   <p>Adds are <b>queued and retried</b>: hearing a track just enqueues it, and a background worker
   (every <code>AR_AUTO_PLAYLIST_RETRY_SEC</code>, default 120s) does the actual adding, retrying up
   to <code>AR_AUTO_PLAYLIST_MAX_ATTEMPTS</code> times. So a service being briefly disconnected, rate

@@ -221,6 +221,7 @@ def create_playlist(name: str, tracks: list) -> dict:
 
 
 _pl_cache: dict[str, str] = {}   # playlist name -> playlist id (auto-playlist)
+_pl_tracks: dict[str, set] = {}  # playlist id -> set of track ids already in it
 
 
 def _playlist_id(s, name: str) -> str:
@@ -245,22 +246,51 @@ def _fresh_playlist(s, pid: str):
     return UserPlaylist(s, pid)
 
 
-def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> bool:
-    """Append one track to the named playlist (create it if needed). Returns True
-    if added, False if the track wasn't found on Tidal."""
+def _existing_ids(s, pid: str) -> set:
+    """Track ids already in the playlist, fetched once and cached, so we skip a
+    track that's already there (added manually or on a previous run)."""
+    if pid in _pl_tracks:
+        return _pl_tracks[pid]
+    ids = set()
+    try:
+        pl = _fresh_playlist(s, pid)
+        offset = 0
+        while True:
+            batch = pl.tracks(limit=100, offset=offset)
+            if not batch:
+                break
+            for tr in batch:
+                if getattr(tr, "id", None) is not None:
+                    ids.add(str(tr.id))
+            if len(batch) < 100:
+                break
+            offset += 100
+    except Exception as e:
+        log.debug("Tidal playlist tracks fetch failed: %s", e)
+    _pl_tracks[pid] = ids
+    return ids
+
+
+def add_to_named_playlist(name: str, artist: str, title: str, album: str = None) -> str:
+    """Append one track to the named playlist (create it if needed). Returns
+    'added', 'present' (already in the playlist), or 'absent' (not found)."""
     s = _load_session()
     if s is None:
         raise RuntimeError("Tidal not connected")
     tid = search_id(s, artist, title, album)
     if not tid:
-        return False
+        return "absent"
     pid = _playlist_id(s, name)
+    existing = _existing_ids(s, pid)
+    if str(tid) in existing:
+        return "present"
     try:
         _fresh_playlist(s, pid).add([tid])
     except Exception:
         # Stale ETag or transient error -> re-fetch fresh and retry once.
         _fresh_playlist(s, pid).add([tid])
-    return True
+    existing.add(str(tid))
+    return "added"
 
 
 if __name__ == "__main__":
