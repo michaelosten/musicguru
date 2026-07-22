@@ -315,7 +315,7 @@ async def _run() -> None:
 
 
 def main() -> int:
-    setup_logging()
+    setup_logging(banner=True)
     try:
         config.validate()
     except config.ConfigError as e:

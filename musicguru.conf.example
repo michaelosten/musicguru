@@ -124,3 +124,4 @@ AR_AUTO_PLAYLIST_PLEX=0
 # AR_AUTO_PLAYLIST_TIDAL_BATCH=25          # Tidal adds per burst
 # AR_AUTO_PLAYLIST_TIDAL_BACKOFF_SEC=30    # base backoff after a Tidal error
 # AR_AUTO_PLAYLIST_TIDAL_BACKOFF_MAX_SEC=900
+# AR_LOG_COLOR=auto     # auto | always | never  (console only; the log file is always plain)

@@ -10,7 +10,7 @@ longer silently drops tracks. Successful/handled tracks move to auto_playlist_lo
 """
 import logging
 
-from . import config, textmatch
+from . import config, logging_setup, textmatch
 from .plex import client as plex
 from .services import spotify, tidal
 from .storage import db
@@ -91,6 +91,13 @@ import time
 _flush_lock = threading.Lock()
 _backoff_until: dict[str, float] = {}   # service -> epoch seconds to resume
 _consec_fail: dict[str, int] = {}       # service -> consecutive-error count
+_PEAK = {"n": 0}                        # high-water queue depth, for the progress bar
+
+
+def _peak_queue(current: int) -> int:
+    if current > _PEAK["n"]:
+        _PEAK["n"] = current
+    return _PEAK["n"]
 
 
 def _in_backoff(svc: str) -> bool:
@@ -197,9 +204,11 @@ def flush(limit: int = 25) -> int:
             if errored:
                 _note_error(svc)
         if added or present or skipped or deferred:
-            log.info("Auto-playlist flush: %d added, %d already-in, %d not-found, "
-                     "%d deferred; %d still queued", added, present, skipped, deferred,
-                     db.autoplaylist_queue_depth())
+            remaining = db.autoplaylist_queue_depth()
+            done = _peak_queue(remaining + added + present + skipped) - remaining
+            log.info("flush  +%d added  =%d already-in  -%d not-found  ~%d deferred",
+                     added, present, skipped, deferred)
+            log.info("queue  %s", logging_setup.bar(done, _PEAK["n"]))
         return added
     finally:
         _flush_lock.release()
