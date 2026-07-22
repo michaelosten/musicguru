@@ -132,6 +132,15 @@
   </div>
 
   <div class="row">
+    <span class="name">Audio capture</span>
+    <span class="badge ok">{{ status.capture.device }}</span>
+    <span class="grow"></span>
+    <span class="opt">{{ status.capture.channels }} ch ({% if status.capture.channels > 1 %}line-in/stereo{% else %}mic/mono{% endif %}) · {{ status.capture.rate }} Hz</span>
+    <button type="button" class="btn" id="devBtnTop">List devices</button>
+  </div>
+  <pre id="devBoxTop" hidden></pre>
+
+  <div class="row">
     <span class="name">Album art display</span>
     {% if status.display.enabled %}<span class="badge ok">on</span>{% else %}<span class="badge off">off</span>{% endif %}
     <span class="grow"></span>
@@ -237,6 +246,19 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
     }
 
     // Capture-device lister (helps set line-in vs mic)
+    function wireDevLister(btnId, boxId) {
+      var b = document.getElementById(btnId);
+      if (!b) return;
+      b.addEventListener("click", function () {
+        var box = document.getElementById(boxId);
+        box.hidden = false; box.textContent = "Listing…";
+        fetch(authed("/api/capture_devices")).then(function (r) { return r.json(); })
+          .then(function (j) { box.textContent = j.text || "(nothing)"; })
+          .catch(function () { box.textContent = "Couldn't list devices."; });
+      });
+    }
+    wireDevLister("devBtnTop", "devBoxTop");
+
     var devBtn = document.getElementById("devBtn");
     if (devBtn) {
       devBtn.addEventListener("click", function () {
