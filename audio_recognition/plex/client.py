@@ -17,6 +17,7 @@ Public surface (unchanged for callers):
 Diagnostic:
     python -m audio_recognition.plex.client "Pink Floyd" "Signs of Life"
 """
+import difflib
 import logging
 import re
 import unicodedata
@@ -27,6 +28,21 @@ import requests
 from .. import config
 
 log = logging.getLogger("audio_recognition.plex")
+
+
+def _is_conn_error(e: Exception) -> bool:
+    """Network/server-side failure (as opposed to 'no results'), so the caller
+    retries later instead of recording a permanent miss."""
+    if isinstance(e, (requests.exceptions.ConnectionError,
+                      requests.exceptions.Timeout,
+                      requests.exceptions.SSLError)):
+        return True
+    txt = f"{type(e).__name__}: {e}".lower()
+    return any(k in txt for k in (
+        "connection", "timeout", "timed out", "unreachable", "refused",
+        "reset by peer", "temporarily unavailable", "bad gateway",
+        "service unavailable", "502", "503", "504", "broken pipe",
+    ))
 
 _cache: dict[tuple[str, str], dict | None] = {}
 _server = None
@@ -104,22 +120,86 @@ def connect():
     return _server, _section
 
 
-def _search(section, title: str):
-    """Best-effort candidate tracks for a title, tried a few ways for recall."""
-    q = _query_title(title) or title
-    for attempt in (
-        lambda: section.searchTracks(title=q, maxresults=60),
-        lambda: section.searchTracks(**{"track.title": q}, maxresults=60),
-    ):
+class PlexUnavailable(Exception):
+    """Plex couldn't be reached. Distinct from 'track isn't in the library' so
+    callers can retry later instead of recording a permanent miss."""
+
+
+def _title_variants(title: str) -> list:
+    """Progressively looser query forms, for recall against messy recognizer
+    titles ('Wings for Marie, Pt. 1', 'Schissm')."""
+    out, seen = [], set()
+
+    def add(v):
+        v = (v or "").strip()
+        if v and v.lower() not in seen:
+            seen.add(v.lower())
+            out.append(v)
+
+    base = _query_title(title) or title or ""
+    add(base)
+    add(title)
+    # Drop a trailing part/disc marker: "Wings for Marie, Pt. 1" -> "Wings for Marie"
+    add(re.sub(r"[,\-–(]?\s*\b(pt|part)\b\.?\s*[ivx\d]+\s*\)?$", "", base, flags=re.I))
+    # Normalize punctuation to spaces, and strip featured-artist tails.
+    add(re.sub(r"\s*\((feat|ft|featuring)\.?[^)]*\)", "", base, flags=re.I))
+    add(re.sub(r"[^\w\s]+", " ", base))
+    # First few words -- catches long titles and trailing junk.
+    words = re.sub(r"[^\w\s]+", " ", base).split()
+    if len(words) > 2:
+        add(" ".join(words[:3]))
+    if len(words) > 1:
+        add(" ".join(words[:2]))
+    return out
+
+
+def _fuzzy(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _search(section, title: str, artist: str = None):
+    """Candidate tracks, tried several ways for recall. Raises PlexUnavailable if
+    Plex itself is unreachable (so it's retried, not recorded as a miss)."""
+    hits, errors = [], 0
+    for q in _title_variants(title):
+        for attempt in (
+            lambda q=q: section.searchTracks(title=q, maxresults=60),
+            lambda q=q: section.searchTracks(**{"track.title": q}, maxresults=60),
+        ):
+            try:
+                found = attempt()
+                if found:
+                    return found
+            except Exception as e:
+                errors += 1
+                if _is_conn_error(e):
+                    raise PlexUnavailable(str(e))
+                log.debug("Plex track search variant failed: %s", e)
+
+    # Last resort: pull the artist's tracks and fuzzy-match locally. This is what
+    # catches recognizer typos like "Schissm" -> "Schism".
+    if artist:
         try:
-            hits = attempt()
+            for art in section.searchArtists(title=artist, maxresults=3):
+                try:
+                    hits.extend(art.tracks())
+                except Exception as e:
+                    if _is_conn_error(e):
+                        raise PlexUnavailable(str(e))
             if hits:
                 return hits
+        except PlexUnavailable:
+            raise
         except Exception as e:
-            log.debug("Plex track search variant failed: %s", e)
+            if _is_conn_error(e):
+                raise PlexUnavailable(str(e))
+            log.debug("Plex artist search failed: %s", e)
+
     try:
-        return [h for h in _server.search(q, mediatype="track")]
+        return [h for h in _server.search(_query_title(title) or title, mediatype="track")]
     except Exception as e:
+        if _is_conn_error(e):
+            raise PlexUnavailable(str(e))
         log.debug("Plex hub search failed: %s", e)
         return []
 
@@ -134,30 +214,39 @@ def _match(artist: str, title: str, album: str = None) -> dict | None:
 
     _srv, section = connect()
     if section is None:
-        return None  # connection/section problem: don't cache, might be transient
+        # Can't tell "no match" from "can't reach Plex" -- treat as unavailable so
+        # the caller retries rather than recording a permanent miss.
+        raise PlexUnavailable(f"not connected ({_base_url() or 'no base url'})")
 
     want_artist, want_title, _ = ck
     if not want_title:
         _cache[ck] = None
         return None
 
-    best, best_score = None, -1
-    try:
-        candidates = _search(section, title)
-    except Exception as e:
-        log.warning("Plex search failed for %s - %s: %s", artist, title, e)
-        return None
+    best, best_score = None, -(10 ** 6)
+    candidates = _search(section, title, artist)   # PlexUnavailable propagates
 
     for tr in candidates:
         item_title = _norm(getattr(tr, "title", ""))
         item_artist = _norm(getattr(tr, "grandparentTitle", ""))
         if not item_title:
             continue
-        title_ok = titles_match(title, getattr(tr, "title", ""))
         artist_ok = (not want_artist
-                     or want_artist in item_artist or item_artist in want_artist)
-        if not (title_ok and artist_ok):
+                     or want_artist in item_artist or item_artist in want_artist
+                     or _fuzzy(want_artist, item_artist) >= 0.85)
+        if not artist_ok:
             continue
+        title_ok = titles_match(title, getattr(tr, "title", ""))
+        near = False
+        if not title_ok:
+            # Recognizer typos ("Schissm" vs "Schism") and small punctuation
+            # differences: accept a close title when the artist already matches.
+            ratio = _fuzzy(want_title, item_title)
+            near = ratio >= 0.86 or (
+                len(want_title) >= 6 and ratio >= 0.80
+                and abs(len(want_title) - len(item_title)) <= 3)
+            if not near:
+                continue
         item_album = _norm(getattr(tr, "parentTitle", ""))
         album_ok = bool(want_album) and (item_album == want_album
                                          or want_album in item_album or item_album in want_album)
@@ -168,7 +257,8 @@ def _match(artist: str, title: str, album: str = None) -> dict | None:
         except (AttributeError, IndexError):
             pass
         # Prefer, in order: the pinned album, a streamable copy, an exact label.
-        score = (4 if album_ok else 0) + (2 if part_key else 0) + (1 if exact else 0)
+        score = ((4 if album_ok else 0) + (2 if part_key else 0)
+                 + (1 if exact else 0) - (3 if near else 0))
         if score > best_score:
             best_score = score
             best = {
@@ -183,6 +273,9 @@ def _match(artist: str, title: str, album: str = None) -> dict | None:
 
     if best is None:
         log.info("No Plex match for %s - %s", artist, title)
+    elif _norm(best.get("title") or "") != want_title:
+        log.info("Plex fuzzy match: %s - %s -> %s - %s", artist, title,
+                 best.get("artist"), best.get("title"))
     _cache[ck] = best
     return best
 
@@ -194,8 +287,12 @@ def find_track(artist: str, title: str, album: str = None) -> dict | None:
 
 
 def in_library(artist: str, title: str) -> bool:
-    """Whether the library has this track at all, streamable or not."""
-    return _match(artist, title) is not None
+    """Whether the library has this track at all, streamable or not. Returns
+    False (rather than raising) if Plex is unreachable -- this drives UI badges."""
+    try:
+        return _match(artist, title) is not None
+    except PlexUnavailable:
+        return False
 
 
 def match_rating_key(artist: str, title: str, album: str = None) -> str | None:
@@ -218,7 +315,10 @@ def presence_batch(pairs: list) -> dict:
     workers = max(1, min(config.PLEX_CONCURRENCY, len(pairs)))
 
     def _one(p):
-        return p, (_match(p[0], p[1]) is not None)
+        try:
+            return p, (_match(p[0], p[1]) is not None)
+        except PlexUnavailable:
+            return p, False   # UI badge: unknown reads as "not in library"
 
     out: dict = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:

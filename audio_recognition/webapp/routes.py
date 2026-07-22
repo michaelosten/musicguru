@@ -194,7 +194,10 @@ def stream(track_id):
     rows = store.get_tracks_by_ids([track_id])
     if not rows:
         abort(404)
-    match = plex.find_track(rows[0]["artist"], rows[0]["title"])
+    try:
+        match = plex.find_track(rows[0]["artist"], rows[0]["title"])
+    except Exception:
+        match = None   # Plex unreachable -> behave as "no match" for this request
     if not match:
         abort(404)
 
@@ -329,7 +332,10 @@ def create_plex_playlist():
 
     keys, missing = [], []
     for t in store.get_tracks_by_ids(ids):
-        rk = plex.match_rating_key(t["artist"], t["title"], t.get("album"))
+        try:
+            rk = plex.match_rating_key(t["artist"], t["title"], t.get("album"))
+        except Exception:
+            rk = None
         if rk:
             keys.append(rk)
         else:

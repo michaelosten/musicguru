@@ -49,7 +49,10 @@ def resolve(artist: str, title: str) -> dict | None:
     album = ov["album"] if ov else None
     b = backend()
     if b == "plex":
-        m = plex.find_track(artist, title, album)
+        try:
+            m = plex.find_track(artist, title, album)
+        except Exception:
+            m = None   # Plex unreachable -> no playable match right now
         if m:
             return {"backend": "plex", "part_key": m.get("part_key"),
                     "duration": m.get("duration")}

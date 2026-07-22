@@ -97,15 +97,35 @@ def _in_backoff(svc: str) -> bool:
     return time.time() < _backoff_until.get(svc, 0)
 
 
+def _backoff_base(svc: str) -> int:
+    # Plex is local: recover quickly. Tidal is rate-limited: ease off harder.
+    return 10 if svc == "plex" else config.AUTO_PLAYLIST_TIDAL_BACKOFF_SEC
+
+
 def _note_error(svc: str) -> None:
-    """Escalating backoff after an error response (mainly Tidal rate limits)."""
+    """Escalating backoff after an error response (rate limits, server down)."""
     n = _consec_fail.get(svc, 0) + 1
     _consec_fail[svc] = n
-    base = config.AUTO_PLAYLIST_TIDAL_BACKOFF_SEC
+    base = _backoff_base(svc)
     wait = min(base * (2 ** (n - 1)), config.AUTO_PLAYLIST_TIDAL_BACKOFF_MAX_SEC)
     _backoff_until[svc] = time.time() + wait
     log.warning("Auto-playlist: backing off %s for %ds after an error (streak %d)",
                 svc, wait, n)
+
+
+def _is_unavailable(e: Exception) -> bool:
+    """A service being unreachable (vs. a genuine per-track failure). These never
+    count against a track's attempt budget -- the service will come back."""
+    from .plex.client import PlexUnavailable
+    if isinstance(e, PlexUnavailable):
+        return True
+    txt = f"{type(e).__name__}: {e}".lower()
+    return any(k in txt for k in (
+        "connection", "timeout", "timed out", "unreachable", "refused",
+        "reset by peer", "temporarily unavailable", "bad gateway",
+        "service unavailable", "not connected", "502", "503", "504",
+        "429", "too many requests", "rate limit",
+    ))
 
 
 def _batch_for(svc: str) -> int:
@@ -143,10 +163,17 @@ def _drain_service(svc: str, name: str) -> tuple:
         except Exception as e:
             deferred += 1
             errored = True
-            db.autoplaylist_queue_attempt(svc, key)   # sink to back of the queue
-            log.warning("Auto-playlist %s failed for %s - %s (will retry): %s",
-                        svc, row["artist"], row["title"], e)
-            break   # back off rather than keep hitting a rate-limited service
+            if _is_unavailable(e):
+                # Service is down/rate-limited: leave the attempt count alone so a
+                # long outage never exhausts a track's retries. It'll be picked up
+                # again once the service is back.
+                log.warning("Auto-playlist %s unavailable at %s - %s (will retry): %s",
+                            svc, row["artist"], row["title"], e)
+            else:
+                db.autoplaylist_queue_attempt(svc, key)
+                log.warning("Auto-playlist %s failed for %s - %s (will retry): %s",
+                            svc, row["artist"], row["title"], e)
+            break   # back off rather than keep hitting a struggling service
     if not errored and (added or present or skipped):
         _consec_fail[svc] = 0   # clean pass -> reset backoff escalation
     return added, present, skipped, deferred, errored
