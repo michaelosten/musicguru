@@ -332,6 +332,74 @@ def match_rating_key(artist: str, title: str, album: str = None) -> str | None:
     return m.get("rating_key") if m else None
 
 
+def browse_artists(query: str, limit: int = 20) -> list:
+    """Artists whose name matches -- step 1 of the manual picker."""
+    _srv, section = connect()
+    if section is None:
+        raise PlexUnavailable("not connected")
+    q = (query or "").strip()
+    if not q:
+        return []
+    try:
+        arts = section.searchArtists(title=q, maxresults=limit) or []
+    except Exception as e:
+        if _is_conn_error(e):
+            raise PlexUnavailable(str(e))
+        log.debug("Plex artist browse failed: %s", e)
+        return []
+    return [{"key": str(getattr(a, "ratingKey", "")),
+             "name": getattr(a, "title", "") or ""} for a in arts
+            if getattr(a, "ratingKey", None) is not None]
+
+
+def browse_albums(artist_key: str, limit: int = 100) -> list:
+    """Albums for an artist -- step 2."""
+    srv, _section = connect()
+    if srv is None:
+        raise PlexUnavailable("not connected")
+    try:
+        art = srv.fetchItem(int(artist_key))
+        albums = art.albums() or []
+    except Exception as e:
+        if _is_conn_error(e):
+            raise PlexUnavailable(str(e))
+        log.debug("Plex album browse failed: %s", e)
+        return []
+    out = []
+    for al in albums[:limit]:
+        if getattr(al, "ratingKey", None) is None:
+            continue
+        out.append({"key": str(al.ratingKey),
+                    "title": getattr(al, "title", "") or "",
+                    "year": str(getattr(al, "year", "") or "")})
+    return out
+
+
+def browse_tracks(album_key: str, limit: int = 200) -> list:
+    """Tracks on an album -- step 3."""
+    srv, _section = connect()
+    if srv is None:
+        raise PlexUnavailable("not connected")
+    try:
+        al = srv.fetchItem(int(album_key))
+        tracks = al.tracks() or []
+    except Exception as e:
+        if _is_conn_error(e):
+            raise PlexUnavailable(str(e))
+        log.debug("Plex track browse failed: %s", e)
+        return []
+    out = []
+    for tr in tracks[:limit]:
+        if getattr(tr, "ratingKey", None) is None:
+            continue
+        out.append({"rating_key": str(tr.ratingKey),
+                    "title": getattr(tr, "title", "") or "",
+                    "artist": getattr(tr, "grandparentTitle", "") or "",
+                    "album": getattr(tr, "parentTitle", "") or "",
+                    "index": getattr(tr, "index", None)})
+    return out
+
+
 def search_candidates(query: str, limit: int = 25) -> list:
     """Free-text track search for the manual 'find it in Plex' picker."""
     _srv, section = connect()

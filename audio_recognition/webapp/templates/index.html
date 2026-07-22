@@ -681,6 +681,8 @@
   }
 
   // ── manual Plex assignment (for want-list mismatches) ───────────────────
+  // Searching "Artist Title" as a track name finds nothing, so this drills down:
+  // artist -> album -> track, which is how you'd look it up by hand.
   async function linkToPlex(row, r) {
     const ov = document.createElement("div");
     ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;";
@@ -689,9 +691,10 @@
     const inputCss = "background:var(--deep);border:1px solid var(--hairline);border-radius:2px;color:var(--ink);font-family:var(--body);font-size:14px;padding:7px 9px;";
     box.innerHTML = `
       <div style="font-family:var(--legend);letter-spacing:.04em;font-size:15px;margin-bottom:2px;">Find in Plex</div>
-      <div style="color:var(--ink-dim);font-size:13px;margin-bottom:12px;">${r.artist} — ${r.title}</div>
+      <div style="color:var(--ink-dim);font-size:13px;margin-bottom:10px;">${r.artist} — ${r.title}</div>
+      <div id="plexCrumb" style="color:var(--ink-faint);font-size:12px;margin-bottom:8px;"></div>
       <div style="display:flex;gap:8px;margin-bottom:6px;">
-        <input id="plexQ" style="${inputCss}flex:1;" placeholder="Search your Plex library" />
+        <input id="plexQ" style="${inputCss}flex:1;" placeholder="Artist name" />
         <button id="plexGo" class="btn primary">Search</button>
       </div>
       <div id="plexList" style="font-size:14px;margin-top:8px;"></div>
@@ -700,48 +703,83 @@
     const close = () => ov.remove();
     ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
     box.querySelector("#plexClose").addEventListener("click", close);
-    const q = box.querySelector("#plexQ"), list = box.querySelector("#plexList");
-    q.value = `${r.artist} ${r.title}`;
+    const q = box.querySelector("#plexQ"), list = box.querySelector("#plexList"),
+          crumb = box.querySelector("#plexCrumb");
+    q.value = r.artist;   // artist only -- that's what the first step matches on
 
-    async function run() {
-      list.textContent = "Searching Plex…";
-      let js;
-      try { js = await (await get(`/api/plex/search?q=${encodeURIComponent(q.value.trim())}`)).json(); }
-      catch { list.textContent = "Search failed."; return; }
-      const hits = js.tracks || [];
+    function rows(items, render, onPick) {
       list.innerHTML = "";
-      if (js.error) { list.textContent = js.error; return; }
-      if (!hits.length) {
-        list.innerHTML = `<div style="color:var(--ink-dim);">Nothing matched. Try just the song title, or the album name.</div>`;
+      if (!items.length) {
+        list.innerHTML = '<div style="color:var(--ink-dim);">Nothing found here.</div>';
         return;
       }
-      hits.forEach((t) => {
-        const item = document.createElement("div");
-        item.style.cssText = "padding:8px 6px;border-bottom:1px solid var(--hairline);cursor:pointer;";
-        item.innerHTML = `<div style="color:var(--ink);">${t.title}</div>
-          <div style="color:var(--ink-dim);font-size:12px;">${t.artist}${t.album ? " · " + t.album : ""}</div>`;
-        item.addEventListener("mouseenter", () => item.style.background = "var(--deep)");
-        item.addEventListener("mouseleave", () => item.style.background = "");
-        item.addEventListener("click", async () => {
-          try {
-            const res = await fetch(authed("/api/plex/link"), {
-              method: "POST", headers: hdrs({ "Content-Type": "application/json" }),
-              body: JSON.stringify({ artist: r.artist, title: r.title,
-                                     rating_key: t.rating_key,
-                                     label: `${t.artist} - ${t.title}` }),
-            });
-            if (!res.ok) { flash("Couldn't save the assignment."); return; }
-            flash(`Linked to "${t.artist} - ${t.title}" in Plex.`);
-            row.remove();          // no longer missing
-            close();
-          } catch { flash("Couldn't save the assignment."); }
-        });
-        list.append(item);
+      items.forEach((it) => {
+        const el = document.createElement("div");
+        el.style.cssText = "padding:8px 6px;border-bottom:1px solid var(--hairline);cursor:pointer;";
+        el.innerHTML = render(it);
+        el.addEventListener("mouseenter", () => el.style.background = "var(--deep)");
+        el.addEventListener("mouseleave", () => el.style.background = "");
+        el.addEventListener("click", () => onPick(it));
+        list.append(el);
       });
     }
-    box.querySelector("#plexGo").addEventListener("click", run);
-    q.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-    run();
+
+    async function api(qs) {
+      const res = await get("/api/plex/browse?" + qs);
+      return res.json();
+    }
+
+    async function showArtists() {
+      crumb.textContent = "";
+      list.textContent = "Searching artists…";
+      const j = await api("q=" + encodeURIComponent(q.value.trim()));
+      if (j.error) { list.textContent = j.error; return; }
+      rows(j.artists || [], (a) => `<div style="color:var(--ink);">${a.name}</div>`,
+           (a) => showAlbums(a));
+    }
+
+    async function showAlbums(artist) {
+      crumb.innerHTML = `<a href="#" id="bkArt" style="color:var(--accent);">← artists</a> · <b>${artist.name}</b>`;
+      crumb.querySelector("#bkArt").addEventListener("click", (e) => { e.preventDefault(); showArtists(); });
+      list.textContent = "Loading albums…";
+      const j = await api("artist_key=" + encodeURIComponent(artist.key));
+      if (j.error) { list.textContent = j.error; return; }
+      rows(j.albums || [],
+           (al) => `<div style="color:var(--ink);">${al.title}</div>` +
+                   `<div style="color:var(--ink-dim);font-size:12px;">${al.year || ""}</div>`,
+           (al) => showTracks(artist, al));
+    }
+
+    async function showTracks(artist, album) {
+      crumb.innerHTML = `<a href="#" id="bkArt" style="color:var(--accent);">← artists</a> · ` +
+                        `<a href="#" id="bkAlb" style="color:var(--accent);">${artist.name}</a> · <b>${album.title}</b>`;
+      crumb.querySelector("#bkArt").addEventListener("click", (e) => { e.preventDefault(); showArtists(); });
+      crumb.querySelector("#bkAlb").addEventListener("click", (e) => { e.preventDefault(); showAlbums(artist); });
+      list.textContent = "Loading tracks…";
+      const j = await api("album=" + encodeURIComponent(album.key));
+      if (j.error) { list.textContent = j.error; return; }
+      rows(j.tracks || [],
+           (t) => `<div style="color:var(--ink);">${t.index ? t.index + ". " : ""}${t.title}</div>` +
+                  `<div style="color:var(--ink-dim);font-size:12px;">${t.artist}${t.album ? " · " + t.album : ""}</div>`,
+           async (t) => {
+             try {
+               const res = await fetch(authed("/api/plex/link"), {
+                 method: "POST", headers: hdrs({ "Content-Type": "application/json" }),
+                 body: JSON.stringify({ artist: r.artist, title: r.title,
+                                        rating_key: t.rating_key,
+                                        label: `${t.artist} - ${t.title}` }),
+               });
+               if (!res.ok) { flash("Couldn't save the assignment."); return; }
+               flash(`Linked to "${t.artist} - ${t.title}" in Plex.`);
+               row.remove();
+               close();
+             } catch { flash("Couldn't save the assignment."); }
+           });
+    }
+
+    box.querySelector("#plexGo").addEventListener("click", showArtists);
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter") showArtists(); });
+    showArtists();
   }
 
   async function loadWantlist(refresh) {

@@ -2,11 +2,11 @@
 
 **Continuous music recognition, logging, and browsing.**
 
-musicguru listens to the music playing in a room through a USB microphone,
-identifies each track, and keeps a searchable, self-healing history of everything
-it hears. It was built to sit on a Raspberry Pi with a USB mic, drive a small
-album-art display, and serve a web console you can browse from anywhere on the
-LAN — but it runs anywhere Python, ALSA, and MySQL do.
+musicguru listens to the music playing in a room through a USB microphone or
+line-in, identifies each track, and keeps a searchable, self-healing history of
+everything it hears. It was built to sit on a Raspberry Pi with a USB mic, drive
+a small album-art display, and serve a web console you can browse from anywhere
+on the LAN — but it runs anywhere Python, ALSA, and MySQL do.
 
 Recognition is backed by a **local fingerprint cache**, so once a song has been
 heard it's re-identified on-device without a network call. Metadata and cover
@@ -60,7 +60,7 @@ there's no dead air between segments:
 
 ```mermaid
 flowchart LR
-  A[USB mic<br/>arecord / ALSA] --> B[Normalize<br/>loudness + peak]
+  A[USB mic or line-in<br/>arecord / ALSA] --> B[Normalize<br/>loudness + peak]
   B --> C{Local<br/>fingerprint<br/>match?}
   C -- hit --> E[Track identity]
   C -- miss --> D[Shazam]
@@ -155,7 +155,7 @@ did before.
 
 | Package | Why |
 | --- | --- |
-| `alsa-utils` | `arecord` capture from the USB microphone |
+| `alsa-utils` | `arecord` capture from a USB microphone or line-in |
 | `ffmpeg` | audio decoding for `pydub` |
 | `libchromaprint-tools` | `fpcalc`, for local recognition (optional but recommended) |
 | `feh` + a TrueType font | the physical album-art display (optional) |
@@ -212,7 +212,8 @@ variables are below.
 | `AR_DB_PASSWORD` | *(required)* | MySQL password |
 | `AR_DB_HOST` / `AR_DB_PORT` | `localhost` / `3306` | MySQL host/port |
 | `AR_DB_USER` / `AR_DB_NAME` | `musicuser` / `music_log` | MySQL user/database |
-| `AR_ALSA_DEVICE` | `hw:1,0` | ALSA capture device (`arecord -l` to find it) |
+| `AR_ALSA_DEVICE` | `hw:1,0` | ALSA capture device — mic **or line-in** (`arecord -l` to find it) |
+| `AR_CAPTURE_CHANNELS` | `1` | `1` for a mono mic, `2` for a stereo line-in (downmixed to mono) |
 | `AR_RECORD_DURATION` | `6` | Seconds per segment |
 | `AR_SAMPLE_RATE` | `44100` | Capture sample rate |
 | `AR_SILENCE_THRESHOLD_DB` | `-45` | Below this dBFS a segment is silence |
@@ -488,6 +489,9 @@ ordering.
 
 ## Troubleshooting
 
+- **Using line-in?** Set `AR_ALSA_DEVICE` to the line-in device and
+  `AR_CAPTURE_CHANNELS=2` if it's stereo — some capture devices refuse mono.
+  The Config page lists your devices for you.
 - **No audio / silence forever** — check `arecord -l` and set `AR_ALSA_DEVICE`
   to the right `hw:CARD,DEVICE`. Test with
   `arecord -D hw:1,0 -d 5 -f cd /tmp/t.wav && aplay /tmp/t.wav`.

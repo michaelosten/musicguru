@@ -533,6 +533,19 @@ def plex_search():
         return jsonify({"tracks": [], "error": f"Plex search failed: {e}"}), 502
 
 
+@bp.route("/api/plex/browse")
+def plex_browse():
+    """Drill-down for the manual picker: artists -> albums -> tracks."""
+    try:
+        if request.args.get("album"):
+            return jsonify({"tracks": plex.browse_tracks(request.args["album"])})
+        if request.args.get("artist_key"):
+            return jsonify({"albums": plex.browse_albums(request.args["artist_key"])})
+        return jsonify({"artists": plex.browse_artists(request.args.get("q", ""))})
+    except Exception as e:
+        return jsonify({"error": f"Plex browse failed: {e}"}), 502
+
+
 @bp.route("/api/plex/link", methods=["POST"])
 def plex_link():
     """Assign a recognized track to a specific Plex item (or clear it)."""
