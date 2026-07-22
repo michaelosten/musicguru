@@ -15,6 +15,7 @@ import datetime
 import json
 import logging
 import os
+import time
 import re
 import unicodedata
 
@@ -103,13 +104,19 @@ def begin_login() -> dict | None:
     if not configured():
         return None
     global _pending
+    _pending = None      # never reuse a previous (possibly expired) code
     try:
         import tidalapi
         s = tidalapi.Session()
         link, future = s.login_oauth()
-        _pending = {"session": s, "future": future, "link": link}
+        # Device codes are short-lived (~5 min). Track the deadline so a stale
+        # code is never shown -- that's what produced "the device code you
+        # entered has expired".
+        ttl = int(getattr(link, "expires_in", 300) or 300)
+        _pending = {"session": s, "future": future, "link": link,
+                    "expires_at": time.time() + ttl}
         return {"url": _normalize_url(link.verification_uri_complete),
-                "code": link.user_code, "expires_in": int(link.expires_in)}
+                "code": link.user_code, "expires_in": ttl}
     except Exception as e:
         log.warning("Tidal begin_login failed: %s", e)
         return None
@@ -135,8 +142,22 @@ def login_status() -> dict:
         _pending = None
         return {"pending": False, "connected": False,
                 "error": "Login wasn't approved before the code expired."}
+    if time.time() >= _pending.get("expires_at", 0):
+        # Code timed out without approval -> get a new one immediately, so the
+        # screen always shows a code that still works.
+        log.info("Tidal device code expired; issuing a fresh one")
+        _pending = None
+        fresh = begin_login()
+        if fresh:
+            return {"pending": True, "connected": False, "refreshed": True,
+                    "url": fresh["url"], "code": fresh["code"],
+                    "expires_in": fresh["expires_in"]}
+        return {"pending": False, "connected": False,
+                "error": "The code expired and a new one couldn't be requested."}
     return {"pending": True, "connected": False,
-            "url": _normalize_url(link.verification_uri_complete), "code": link.user_code}
+            "url": _normalize_url(link.verification_uri_complete),
+            "code": link.user_code,
+            "expires_in": max(0, int(_pending["expires_at"] - time.time()))}
 
 
 def connected() -> bool:

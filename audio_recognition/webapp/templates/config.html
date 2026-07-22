@@ -251,11 +251,36 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
     // Tidal in-console device login
     var tdBtn = document.getElementById("tdConnect");
     var polls = 0;
+    var tdDeadline = 0, tdTick = null;
+
+    function tdRender(box, url, code, secs) {
+      box.innerHTML = 'Go to <a href="' + url + '" target="_blank" rel="noopener">' + url +
+        '</a> and approve. Code: <strong>' + code + '</strong> ' +
+        '<span id="tdLeft" class="opt"></span><br>' +
+        '<span id="tdStat">Waiting for approval…</span>';
+      tdDeadline = Date.now() + (secs || 300) * 1000;
+      if (tdTick) clearInterval(tdTick);
+      tdTick = setInterval(function () {
+        var left = Math.max(0, Math.round((tdDeadline - Date.now()) / 1000));
+        var el = document.getElementById("tdLeft");
+        if (!el) { clearInterval(tdTick); return; }
+        el.textContent = left ? "(valid for " + left + "s)" : "(expired — getting a new code…)";
+      }, 1000);
+    }
+
     function tdPoll() {
       fetch(authed("/tidal/login/status")).then(function (r) { return r.json(); }).then(function (j) {
         var box = document.getElementById("tdBox");
         var stat = document.getElementById("tdStat");
+        if (j.refreshed && j.code) {
+          // The old code timed out; the server issued a fresh one.
+          tdRender(box, j.url, j.code, j.expires_in);
+          polls = 0;
+          setTimeout(tdPoll, 3000);
+          return;
+        }
         if (j.connected) {
+          if (tdTick) { clearInterval(tdTick); tdTick = null; }
           box.innerHTML = "Tidal connected — you're set. It refreshes itself from now on.";
           var b = document.getElementById("tdBadge"); if (b) { b.textContent = "connected"; b.className = "badge ok"; }
           if (tdBtn) tdBtn.disabled = false;
@@ -279,9 +304,7 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
           return r.json().then(function (j) { return { ok: r.ok, j: j }; });
         }).then(function (res) {
           if (!res.ok) { box.innerHTML = res.j.error || "Couldn't start login."; tdBtn.disabled = false; return; }
-          box.innerHTML = 'Go to <a href="' + res.j.url + '" target="_blank" rel="noopener">' + res.j.url +
-            '</a> and approve. Code: <strong>' + res.j.code + '</strong><br>' +
-            '<span id="tdStat">Waiting for approval…</span>';
+          tdRender(box, res.j.url, res.j.code, res.j.expires_in);
           tdPoll();
         }).catch(function () { box.innerHTML = "Couldn't start Tidal login."; tdBtn.disabled = false; });
       });
