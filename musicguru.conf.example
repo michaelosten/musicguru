@@ -126,3 +126,7 @@ AR_AUTO_PLAYLIST_PLEX=0
 # AR_AUTO_PLAYLIST_TIDAL_BACKOFF_MAX_SEC=900
 # AR_LOG_COLOR=auto     # auto | always | never  (console only; the log file is always plain)
 # AR_DISPLAY_ENABLED=0   # draw album art to an attached framebuffer display (off by default)
+# AR_DISPLAY_W=800
+# AR_DISPLAY_H=480
+# AR_DISPLAY_CMD=          # blank = auto (feh -> fbi -> fbv); {file} = image path
+# AR_DISPLAY_FB=/dev/fb0

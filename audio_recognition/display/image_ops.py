@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import subprocess
+import time
 import tempfile
 import time
 from io import BytesIO
@@ -91,32 +92,68 @@ def _atomic_save(canvas: Image.Image, path: str) -> None:
         raise
 
 
-def _ensure_viewer() -> None:
-    """Start feh once and let it poll the file.
+def _viewer_commands() -> list:
+    """Viewer command-lines to try, in order. AR_DISPLAY_CMD overrides (use
+    {file} for the image path). feh needs X; fbi/fbv draw straight to the
+    framebuffer on a headless Pi, so they're tried as fallbacks."""
+    custom = getattr(config, "DISPLAY_CMD", "") or ""
+    if custom.strip():
+        return [[p.replace("{file}", config.COVER_ART_FILE)
+                 for p in custom.split()]]
+    fb = getattr(config, "DISPLAY_FB", "/dev/fb0")
+    return [
+        ["feh", "--fullscreen", "--hide-pointer",
+         "--reload", str(config.FEH_RELOAD_SEC), config.COVER_ART_FILE],
+        ["fbi", "-d", fb, "-T", "1", "-noverbose", "-a", "-cachemem", "0",
+         config.COVER_ART_FILE],
+        ["fbv", "-d", fb, "-f", "-r", config.COVER_ART_FILE],
+    ]
 
-    The old code spawned a fresh feh per track and killed the previous one,
-    which flickered to a black root window on every change and orphaned feh
-    processes whenever terminate() failed.
+
+def _ensure_viewer() -> None:
+    """Start an image viewer once and let it poll the file.
+
+    Errors used to go to /dev/null, so a viewer that couldn't open a display
+    failed completely silently. Now the failure reason is logged, and we fall
+    back from feh (needs X) to framebuffer viewers.
     """
     global _feh_process
     if _feh_process is not None and _feh_process.poll() is None:
         return
-    try:
-        _feh_process = subprocess.Popen(
-            [
-                "feh",
-                "--fullscreen",
-                "--hide-pointer",
-                "--reload", str(config.FEH_RELOAD_SEC),
-                config.COVER_ART_FILE,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        log.debug("Started feh (pid %s)", _feh_process.pid)
-    except FileNotFoundError:
-        log.error("feh not found on PATH; display disabled for this run")
-        _feh_process = None
+    if not os.path.exists(config.COVER_ART_FILE):
+        return   # nothing to show yet; caller writes the file first
+
+    tried = []
+    for cmd in _viewer_commands():
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE)
+        except FileNotFoundError:
+            tried.append(f"{cmd[0]}: not installed")
+            continue
+        except Exception as e:
+            tried.append(f"{cmd[0]}: {e}")
+            continue
+        # Give it a moment: a viewer that can't open a display dies immediately.
+        time.sleep(0.6)
+        if proc.poll() is None:
+            _feh_process = proc
+            log.info("display: started %s (pid %s)", cmd[0], proc.pid)
+            return
+        err = ""
+        try:
+            err = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+        except Exception:
+            pass
+        tried.append(f"{cmd[0]}: exited rc={proc.returncode}"
+                     + (f" -- {err.splitlines()[0][:160]}" if err else ""))
+
+    _feh_process = None
+    log.error("display: no viewer could start. Tried -> %s", "; ".join(tried))
+    if not os.environ.get("DISPLAY"):
+        log.error("display: DISPLAY is unset -- feh needs X. Install fbi "
+                  "(apt install fbi) for framebuffer output, or set "
+                  "AR_DISPLAY_CMD to your own viewer.")
 
 
 def resize_and_display(img_data: bytes) -> None:
@@ -184,10 +221,21 @@ atexit.register(shutdown_display)
 
 
 def apply_display_setting() -> None:
-    """Called after a config reload: if the display was turned off, tear down the
-    viewer; nothing to do when turning on (the next track draws to it)."""
+    """Called after a config reload. Turning it OFF tears the viewer down. Turning
+    it ON paints something immediately -- waiting for the next track change made
+    a freshly enabled display look broken."""
     if not config.DISPLAY_ENABLED:
         try:
             shutdown_display()
         except Exception:
             pass
+        return
+    try:
+        global _last_hash
+        _last_hash = None          # force the next cover to redraw at the new size
+        if os.path.exists(config.COVER_ART_FILE):
+            _ensure_viewer()       # re-show the art already on disk
+        else:
+            display_text("musicguru")
+    except Exception as e:
+        log.warning("display: couldn't start on enable: %s", e)

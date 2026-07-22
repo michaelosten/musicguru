@@ -132,6 +132,10 @@ MUSICBRAINZ_USER_AGENT = os.getenv("AR_MUSICBRAINZ_UA", "audio_recognition/1.0")
 # installs are headless; turn it on from the Config page.
 DISPLAY_ENABLED = _env_bool("AR_DISPLAY_ENABLED", False)
 DISPLAY_SIZE = (_env_int("AR_DISPLAY_W", 800), _env_int("AR_DISPLAY_H", 480))
+# Viewer: feh needs X. On a headless framebuffer Pi, fbi/fbv are tried next.
+# Override with your own command; {file} is replaced with the image path.
+DISPLAY_CMD = os.getenv("AR_DISPLAY_CMD", "")
+DISPLAY_FB = os.getenv("AR_DISPLAY_FB", "/dev/fb0")
 FONT_PATH = os.getenv(
     "AR_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 )

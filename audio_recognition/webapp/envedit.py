@@ -24,6 +24,8 @@ SCHEMA = [
     ("AR_DISPLAY_ENABLED", "Show album art on the display", "bool", "Display"),
     ("AR_DISPLAY_W", "Display width (px)", "int", "Display"),
     ("AR_DISPLAY_H", "Display height (px)", "int", "Display"),
+    ("AR_DISPLAY_CMD", "Viewer command (blank = auto)", "text", "Display"),
+    ("AR_DISPLAY_FB", "Framebuffer device", "text", "Display"),
 
     ("AR_ALSA_DEVICE", "Capture device (arecord -D)", "text", "Capture"),
     ("AR_CAPTURE_CHANNELS", "Channels (1 mic, 2 line-in)", "int", "Capture"),

@@ -136,6 +136,7 @@
     {% if status.display.enabled %}<span class="badge ok">on</span>{% else %}<span class="badge off">off</span>{% endif %}
     <span class="grow"></span>
     <span class="opt">{% if status.display.enabled %}{{ status.display.size }}{% else %}art is not drawn to a screen{% endif %}</span>
+    {% if status.display.enabled %}<button type="button" class="btn" id="dispTest">Test display</button>{% endif %}
   </div>
 
   <div class="row">
@@ -199,6 +200,25 @@ AR_SPOTIFY_REDIRECT_URI=http://&lt;this-host&gt;:8000/spotify/callback</pre>
       if (s === "connected") { f.className = "flash ok"; f.textContent = "Spotify connected."; }
       else if (s === "denied") { f.className = "flash bad"; f.textContent = "Spotify authorization was declined."; }
       else if (s === "failed") { f.className = "flash bad"; f.textContent = "Spotify authorization failed — check your app credentials and redirect URI."; }
+    }
+
+    // Display test card
+    var dispBtn = document.getElementById("dispTest");
+    if (dispBtn) {
+      dispBtn.addEventListener("click", function () {
+        dispBtn.disabled = true; dispBtn.textContent = "Testing…";
+        fetch(authed("/api/display_test"), { method: "POST" })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            dispBtn.textContent = "Test display";
+            dispBtn.disabled = false;
+            alert(j.detail || j.error || "Done.");
+          })
+          .catch(function () {
+            dispBtn.textContent = "Test display"; dispBtn.disabled = false;
+            alert("Couldn't reach the server.");
+          });
+      });
     }
 
     // Auto-playlist backfill

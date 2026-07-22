@@ -301,7 +301,7 @@
   change the credentials any time from the Config page.</p>
   <p><b>Album art display.</b> Drawing cover art to an attached framebuffer screen is
   <b>off by default</b> (most installs are headless). Turn it on with the <i>Show album art on
-  the display</i> toggle on the Config page — it takes effect immediately.</p>
+  the display</i> toggle on the Config page — it takes effect immediately, and <b>Test display</b> paints a test card so you can confirm the screen works without waiting for the next track. The viewer is auto-detected: <code>feh</code> (needs X), then <code>fbi</code>/<code>fbv</code> (draw straight to the framebuffer on a headless Pi). Override with <code>AR_DISPLAY_CMD</code>; failures are logged with the reason.</p>
   <p><b>No restarts.</b> Every setting on the Config page applies the moment you save: the
   capture device and format are read per segment, service clients reconnect, logging handlers
   are rebuilt, and the database pool is recreated on demand.</p>

@@ -520,6 +520,25 @@ def autoplaylist_backfill():
     return jsonify({"queued": queued})
 
 
+@bp.route("/api/display_test", methods=["POST"])
+def display_test():
+    """Draw a test card so you can confirm the screen works without waiting for
+    the next track. Reports what actually happened."""
+    from ..display import image_ops
+    if not config.DISPLAY_ENABLED:
+        return jsonify({"error": "The display is turned off."}), 400
+    try:
+        image_ops.display_text("musicguru")
+    except Exception as e:
+        return jsonify({"error": f"Display failed: {e}"}), 500
+    proc = getattr(image_ops, "_feh_process", None)
+    if proc is not None and proc.poll() is None:
+        return jsonify({"ok": True, "detail": "Test card sent to the display."})
+    return jsonify({"ok": False,
+                    "detail": "No viewer is running — see musicguru.log for why "
+                              "(feh needs X; install fbi for framebuffer)."})
+
+
 @bp.route("/api/capture_devices")
 def capture_devices():
     """List ALSA capture devices (arecord -l) so the user can find their line-in
