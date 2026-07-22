@@ -73,7 +73,8 @@ def _base_url() -> str:
     return u
 
 
-from ..textmatch import norm as _norm, query_title as _query_title, titles_match
+from ..textmatch import (norm as _norm, query_title as _query_title,
+                         query_name as _query_name, titles_match, names_match)
 
 
 def _session() -> requests.Session:
@@ -180,7 +181,8 @@ def _search(section, title: str, artist: str = None):
     # catches recognizer typos like "Schissm" -> "Schism".
     if artist:
         try:
-            for art in section.searchArtists(title=artist, maxresults=3):
+            for art in section.searchArtists(title=(_query_name(artist) or artist),
+                                             maxresults=3):
                 try:
                     hits.extend(art.tracks())
                 except Exception as e:
@@ -233,7 +235,8 @@ def _match(artist: str, title: str, album: str = None) -> dict | None:
             continue
         artist_ok = (not want_artist
                      or want_artist in item_artist or item_artist in want_artist
-                     or _fuzzy(want_artist, item_artist) >= 0.85)
+                     or _fuzzy(want_artist, item_artist) >= 0.85
+                     or names_match(artist, getattr(tr, "grandparentTitle", "")))
         if not artist_ok:
             continue
         title_ok = titles_match(title, getattr(tr, "title", ""))

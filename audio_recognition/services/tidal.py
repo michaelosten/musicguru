@@ -37,7 +37,8 @@ def configured() -> bool:
         return False
 
 
-from ..textmatch import norm as _norm, query_title as _clean, titles_match
+from ..textmatch import (norm as _norm, query_title as _clean,
+                         query_name as _cleanname, titles_match, names_match)
 
 
 def _save(session) -> None:
@@ -167,7 +168,7 @@ def search_id(session, artist: str, title: str, album: str = None) -> str | None
     """Best Tidal track id for (artist, title), preferring a given album."""
     want_a, want_al = _norm(artist), (_norm(album) if album else "")
     matches = []
-    for q in (f"{_clean(artist)} {_clean(title)}", _clean(title)):
+    for q in (f"{_cleanname(artist)} {_clean(title)}".strip(), _clean(title)):
         try:
             results = session.search(q, limit=10)
         except Exception as e:
@@ -180,7 +181,10 @@ def search_id(session, artist: str, title: str, album: str = None) -> str | None
                 arts.append(_norm(getattr(main, "name", "")))
             title_ok = titles_match(title, getattr(tr, "name", ""))
             artist_ok = (not want_a) or any(
-                want_a == a or want_a in a or a in want_a for a in arts if a)
+                want_a == a or want_a in a or a in want_a for a in arts if a) or any(
+                names_match(artist, getattr(x, "name", "")) for x in
+                ((getattr(tr, "artists", []) or []) + ([getattr(tr, "artist", None)]
+                 if getattr(tr, "artist", None) is not None else [])))
             if title_ok and artist_ok and getattr(tr, "id", None) is not None:
                 matches.append(tr)
         if matches:

@@ -26,6 +26,9 @@ _CENSOR = [
     (re.compile(r"a[s\*]*\*+hole", re.I), "asshole"),
     (re.compile(r"\ba[\*s]*\*+(?=\b|es\b)", re.I), "ass"),
     (re.compile(r"d[\*a]*\*+mn", re.I), "damn"),
+    (re.compile(r"b[\*u]*\*+t?hole", re.I), "butthole"),
+    (re.compile(r"c[\*o]*\*+ck\b", re.I), "cock"),
+    (re.compile(r"wh[\*o]*\*+re", re.I), "whore"),
     (re.compile(r"h[\*e]*\*+ll\b", re.I), "hell"),
 ]
 
@@ -72,3 +75,34 @@ def titles_match(recognized: str, candidate: str) -> bool:
             except re.error:
                 pass
     return False
+
+
+def has_mask(s: str) -> bool:
+    return "*" in (s or "")
+
+
+def query_name(s: str) -> str:
+    """A service-searchable form of a name. Masked words (e.g. 'B******e') can't
+    be searched literally -- no catalogue contains asterisks -- so drop those
+    tokens and search on what's left ('B******e Surfers' -> 'Surfers'). If every
+    token is masked, fall back to the de-censored guess."""
+    s = decensor(s or "")
+    if "*" not in s:
+        return re.sub(r"\(.*?\)|\[.*?\]", "", s).strip()
+    kept = [w for w in re.split(r"\s+", s) if w and "*" not in w]
+    return " ".join(kept).strip() or re.sub(r"[*]+", "", s).strip()
+
+
+def names_match(recognized: str, candidate: str) -> bool:
+    """Wildcard/censorship-tolerant comparison for ARTIST names (same rules as
+    titles_match, plus a token-overlap fallback for multi-artist credits)."""
+    if titles_match(recognized, candidate):
+        return True
+    a = {w for w in re.split(r"[^0-9a-z]+", decensor(_fold(recognized)).lower())
+         if len(w) > 2 and "*" not in w}
+    b = {w for w in re.split(r"[^0-9a-z]+", decensor(_fold(candidate)).lower())
+         if len(w) > 2}
+    if not a or not b:
+        return False
+    # e.g. "B******e Surfers" vs "Butthole Surfers" -> {"surfers"} overlaps.
+    return bool(a & b) and len(a & b) >= min(len(a), len(b)) * 0.5

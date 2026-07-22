@@ -24,7 +24,8 @@ def configured() -> bool:
     return bool(config.SPOTIFY_CLIENT_ID and config.SPOTIFY_CLIENT_SECRET and config.SPOTIFY_REDIRECT_URI)
 
 
-from ..textmatch import norm as _norm, query_title as _clean, titles_match
+from ..textmatch import (norm as _norm, query_title as _clean,
+                         query_name as _cleanname, titles_match, names_match)
 
 
 def _oauth():
@@ -87,8 +88,9 @@ def search_uri(sp, artist: str, title: str, album: str = None) -> str | None:
     """Best Spotify track URI for (artist, title), preferring a given album."""
     want_t, want_a, want_al = _norm(title), _norm(artist), (_norm(album) if album else "")
     items = []
-    for q in (f'track:{_clean(title)} artist:{_clean(artist)}',
-              f'{_clean(artist)} {_clean(title)}'):
+    for q in (f'track:{_clean(title)} artist:{_cleanname(artist)}',
+              f'{_cleanname(artist)} {_clean(title)}'.strip(),
+              _clean(title)):
         try:
             items = sp.search(q=q, type="track", limit=8)["tracks"]["items"]
         except Exception as e:
@@ -100,7 +102,10 @@ def search_uri(sp, artist: str, title: str, album: str = None) -> str | None:
     for it in items:
         arts = [_norm(a.get("name", "")) for a in it.get("artists", [])]
         title_ok = titles_match(title, it.get("name", ""))
-        artist_ok = (not want_a) or any(want_a == a or want_a in a or a in want_a for a in arts)
+        artist_ok = ((not want_a)
+                     or any(want_a == a or want_a in a or a in want_a for a in arts)
+                     or any(names_match(artist, x.get("name", ""))
+                            for x in it.get("artists", [])))
         if title_ok and artist_ok:
             matches.append(it)
     if not matches:
