@@ -70,6 +70,7 @@ def archive_data():
         limit=_int_arg("limit", 25, 1, config.ARCHIVE_MAX_LIMIT),
         sort=_str_arg("sort") or "recent",
         merge_variants=request.args.get("merge") == "1",
+        min_plays=_int_arg("min_plays", 0, 0, 100000),
         **_common_filters(),
     ))
 
@@ -95,7 +96,8 @@ def stats():
 
 @bp.route("/api/matching_ids")
 def matching_ids():
-    return jsonify(store.get_matching_ids(**_common_filters()))
+    return jsonify(store.get_matching_ids(
+        min_plays=_int_arg("min_plays", 0, 0, 100000), **_common_filters()))
 
 
 @bp.route("/api/in_library", methods=["POST"])
@@ -179,10 +181,9 @@ def export_list():
     """A plain 'Artist - Title' text list of the selected tracks -- needs no
     library at all, for pasting into a transfer service or keeping a record."""
     payload = request.get_json(silent=True) or {}
-    ids = payload.get("ids") or []
-    if not ids:
-        return jsonify({"error": "Select at least one track."}), 400
-    tracks = store.get_tracks_by_ids(ids)
+    tracks = _tracks_from_request(payload)
+    if not tracks:
+        return jsonify({"error": "Nothing matched — select tracks or widen the filter."}), 400
     body = "\n".join(f"{t['artist']} - {t['title']}" for t in tracks) + "\n"
     return Response(body, mimetype="text/plain",
                     headers={"Content-Disposition": 'attachment; filename="tracks.txt"'})
@@ -334,16 +335,33 @@ def fix():
 
 # --- create a real Plex playlist -----------------------------------------
 
+def _tracks_from_request(p: dict) -> list:
+    """Tracks for a playlist request: either the rows the user ticked, or every
+    track matching the current filter (so you can build 'everything played 5+
+    times' without selecting hundreds of checkboxes)."""
+    f = p.get("filter")
+    if f:
+        return store.get_tracks_by_filter(
+            q=f.get("q") or None,
+            genre=f.get("genre") or None,
+            sort=f.get("sort") or "plays",
+            min_plays=int(f.get("min_plays") or 0),
+            merge_variants=bool(f.get("merge")),
+            date_from=f.get("from") or None, date_to=f.get("to") or None,
+            after=f.get("after") or None, before=f.get("before") or None,
+            limit=int(f.get("limit") or 0))
+    return store.get_tracks_by_ids(p.get("ids") or [])
+
+
 @bp.route("/create_plex_playlist", methods=["POST"])
 def create_plex_playlist():
     p = request.get_json(silent=True) or {}
-    ids = p.get("ids") or []
     name = (p.get("name") or "").strip() or "Heard on the stereo"
     if not plex.configured():
         return jsonify({"error": "Plex is not configured."}), 400
 
     keys, missing = [], []
-    for t in store.get_tracks_by_ids(ids):
+    for t in _tracks_from_request(p):
         try:
             rk = plex.match_rating_key(t["artist"], t["title"], t.get("album"))
         except Exception:
@@ -392,17 +410,15 @@ def spotify_callback():
 @bp.route("/create_spotify_playlist", methods=["POST"])
 def create_spotify_playlist():
     p = request.get_json(silent=True) or {}
-    ids = p.get("ids") or []
     name = (p.get("name") or "").strip() or "Heard on the stereo"
     if not spotify.configured():
         return jsonify({"error": "Spotify is not configured (see Config)."}), 400
     if not spotify.connected():
         return jsonify({"error": "Connect Spotify on the Config page first."}), 400
-    if not ids:
-        return jsonify({"error": "Select at least one track."}), 400
-
     tracks = [{"artist": t["artist"], "title": t["title"], "album": t.get("album")}
-              for t in store.get_tracks_by_ids(ids)]
+              for t in _tracks_from_request(p)]
+    if not tracks:
+        return jsonify({"error": "Nothing matched — select tracks or widen the filter."}), 400
     try:
         result = spotify.create_playlist(name, tracks)
     except Exception as e:
@@ -431,18 +447,16 @@ def tidal_login_status():
 @bp.route("/create_tidal_playlist", methods=["POST"])
 def create_tidal_playlist():
     p = request.get_json(silent=True) or {}
-    ids = p.get("ids") or []
     name = (p.get("name") or "").strip() or "Heard on the stereo"
     if not tidal.configured():
         return jsonify({"error": "Tidal is not enabled (see Config)."}), 400
     if not tidal.connected():
         return jsonify({"error": "Authorize Tidal first: run "
                         "`python -m audio_recognition.services.tidal login` on the host."}), 400
-    if not ids:
-        return jsonify({"error": "Select at least one track."}), 400
-
     tracks = [{"artist": t["artist"], "title": t["title"], "album": t.get("album")}
-              for t in store.get_tracks_by_ids(ids)]
+              for t in _tracks_from_request(p)]
+    if not tracks:
+        return jsonify({"error": "Nothing matched — select tracks or widen the filter."}), 400
     try:
         result = tidal.create_playlist(name, tracks)
     except Exception as e:

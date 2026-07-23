@@ -58,6 +58,11 @@
         <option value="album">Album A–Z</option>
         <option value="oldest">First heard</option>
       </select>
+      <label class="opt" id="minPlaysWrap" title="Only show tracks heard at least this many times">
+        <span>Min plays</span>
+        <input type="number" id="minPlays" min="1" step="1" placeholder="any"
+               style="width:64px;background:var(--deep);border:1px solid var(--hairline);border-radius:2px;color:var(--ink);font-family:var(--body);font-size:13px;padding:5px 6px;margin-left:6px;" />
+      </label>
       <button class="btn" id="mergeBtn" title="Merge remasters and live versions into one row">Merge variants</button>
     </div>
 
@@ -246,6 +251,8 @@
     const p = new URLSearchParams();
     if ($("q").value.trim()) p.set("q", $("q").value.trim());
     if ($("genre").value)    p.set("genre", $("genre").value);
+    const mp = parseInt($("minPlays") && $("minPlays").value, 10);
+    if (mp > 1) p.set("min_plays", String(mp));
     if (range.after)  p.set("after", range.after);
     if (range.before) p.set("before", range.before);
     return p;
@@ -1011,6 +1018,7 @@
       tab.setAttribute("aria-selected", "true");
       view = tab.dataset.view;
       $("sort").hidden = view !== "tracks";
+    if ($("minPlaysWrap")) $("minPlaysWrap").hidden = view !== "tracks";
       $("mergeBtn").hidden = view !== "tracks";
       $("daterow").hidden = view === "stats" || view === "wantlist";
       $("list").dataset.lastDay = "";
@@ -1028,6 +1036,12 @@
   });
   $("genre").addEventListener("change", () => { if (view !== "stats") reset(); });
   $("sort").addEventListener("change", reset);
+  if ($("minPlays")) {
+    let mpT;
+    $("minPlays").addEventListener("input", () => {
+      clearTimeout(mpT); mpT = setTimeout(reset, 350);
+    });
+  }
   $("mergeBtn").addEventListener("click", () => {
     merge = !merge;
     $("mergeBtn").classList.toggle("primary", merge);

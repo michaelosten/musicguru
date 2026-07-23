@@ -821,12 +821,29 @@ def has_cover_blob(cover_key: str) -> bool:
 
 # --- reads ---------------------------------------------------------------
 
+def get_tracks_by_filter(q=None, genre=None, sort="plays", min_plays=0,
+                         merge_variants=False, date_from=None, date_to=None,
+                         after=None, before=None, limit=0) -> list[dict]:
+    """Every distinct track matching a filter, for building a playlist from a
+    whole result set rather than hand-picked rows. limit=0 means no cap; with a
+    limit and sort='plays' this is 'the top N most-played'."""
+    rows = get_archive(offset=0, limit=(int(limit) if limit else 100000),
+                       q=q, genre=genre, sort=sort, merge_variants=merge_variants,
+                       date_from=date_from, date_to=date_to, after=after,
+                       before=before, min_plays=min_plays)
+    return [{"id": r.get("id"), "artist": r.get("artist"), "title": r.get("title"),
+             "album": r.get("album"), "plays": r.get("plays")} for r in rows]
+
+
 def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
                 merge_variants=False, date_from=None, date_to=None,
-                after=None, before=None) -> list[dict]:
+                after=None, before=None, min_plays=0) -> list[dict]:
     where, params = _filters(q, genre, date_from, date_to, after, before)
     order = SORTS.get(sort, SORTS["recent"])
     group = f"{_BASE_TITLE}, artist" if merge_variants else "title, artist"
+    # Filter on the grouped play count (HAVING, not WHERE -- plays is an
+    # aggregate), so "everything I've heard N+ times" is a first-class view.
+    having = "HAVING COUNT(*) >= %s" if min_plays and int(min_plays) > 1 else ""
 
     sql = f"""
         SELECT MAX(id)                  AS id,
@@ -842,17 +859,20 @@ def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
         FROM recognized_songs
         {where}
         GROUP BY {group}
+        {having}
         ORDER BY {order}
         LIMIT %s OFFSET %s
     """
+    tail = ((int(min_plays),) if having else ()) + (limit, offset)
     try:
         with _cursor(dictionary=True) as (_c, cur):
-            cur.execute(sql, tuple(params) + (limit, offset))
+            cur.execute(sql, tuple(params) + tail)
             rows = cur.fetchall()
     except mysql.connector.Error as e:
         if merge_variants:
             log.warning("merge_variants needs MySQL 8 (REGEXP_REPLACE): %s", e)
-            return get_archive(offset, limit, q, genre, sort, False, date_from, date_to, after, before)
+            return get_archive(offset, limit, q, genre, sort, False, date_from,
+                               date_to, after, before, min_plays)
         log.error("get_archive error: %s", e)
         return []
 
@@ -863,15 +883,20 @@ def get_archive(offset=0, limit=20, q=None, genre=None, sort="recent",
 
 
 def get_matching_ids(q=None, genre=None, date_from=None, date_to=None,
-                     after=None, before=None, cap=500) -> list[int]:
-    """Ids for 'select all matching' -- one representative play per track."""
+                     after=None, before=None, cap=0, min_plays=0) -> list[int]:
+    """Ids for 'select all matching' -- one representative play per track.
+    cap=0 means no limit; min_plays keeps only tracks heard that many times."""
     where, params = _filters(q, genre, date_from, date_to, after, before)
+    having = "HAVING COUNT(*) >= %s " if min_plays and int(min_plays) > 1 else ""
+    tail = ((int(min_plays),) if having else ())
     try:
         with _cursor() as (_c, cur):
             cur.execute(
                 f"SELECT MAX(id) FROM recognized_songs {where} "
-                f"GROUP BY title, artist ORDER BY MAX(recognized_at) DESC LIMIT %s",
-                tuple(params) + (cap,),
+                f"GROUP BY title, artist {having}"
+                f"ORDER BY COUNT(*) DESC, MAX(recognized_at) DESC"
+                + (" LIMIT %s" if cap else ""),
+                tuple(params) + tail + ((cap,) if cap else ()),
             )
             return [r[0] for r in cur.fetchall()]
     except mysql.connector.Error as e:
