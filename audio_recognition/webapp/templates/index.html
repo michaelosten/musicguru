@@ -1035,13 +1035,37 @@
     debounce = setTimeout(() => { if (view !== "stats") reset(); }, 280);
   });
   $("genre").addEventListener("change", () => { if (view !== "stats") reset(); });
-  $("sort").addEventListener("change", reset);
+  $("sort").addEventListener("change", () => { saveView(); reset(); });
   if ($("minPlays")) {
     let mpT;
     $("minPlays").addEventListener("input", () => {
+      // Asking for "at least N plays" almost always means "ranked by plays" --
+      // switch the dropdown visibly rather than silently reordering.
+      if (parseInt($("minPlays").value, 10) > 1 && $("sort").value === "recent") {
+        $("sort").value = "plays";
+      }
+      saveView();
       clearTimeout(mpT); mpT = setTimeout(reset, 350);
     });
   }
+
+  // Keep the sort/threshold you last used, so the view stays how you left it.
+  function saveView() {
+    try {
+      localStorage.setItem("mg.view", JSON.stringify({
+        sort: $("sort").value,
+        minPlays: $("minPlays") ? $("minPlays").value : "",
+      }));
+    } catch (e) { /* private mode etc. -- not worth failing over */ }
+  }
+  function restoreView() {
+    try {
+      const v = JSON.parse(localStorage.getItem("mg.view") || "{}");
+      if (v.sort) $("sort").value = v.sort;
+      if (v.minPlays && $("minPlays")) $("minPlays").value = v.minPlays;
+    } catch (e) { /* ignore */ }
+  }
+  restoreView();
   $("mergeBtn").addEventListener("click", () => {
     merge = !merge;
     $("mergeBtn").classList.toggle("primary", merge);
